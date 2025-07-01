@@ -1,20 +1,40 @@
-async function fetchPokemon(id) {
-    const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
+const statMappings = {
+    'hp': { short: 'HP', className: 'stat-hp' },
+    'attack': { short: 'ATK', className: 'stat-attack' },
+    'defense': { short: 'DEF', className: 'stat-defense' },
+    'special-attack': { short: 'SP. ATK', className: 'stat-sp-atk' },
+    'special-defense': { short: 'SP. DEF', className: 'stat-sp-def' },
+    'speed': { short: 'SPE', className: 'stat-speed' }
+};
+
+async function fetchPokemon(identifier) {
+    const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${identifier}`);
+    if (!response.ok) {
+        throw new Error(`Pokémon not found: ${identifier}`);
+    }
     const data = await response.json();
 
-    let statsDetail = {};
+    let processedStats = [];
+    const types = data.types.map(typeInfo => typeInfo.type.name);
     let totalStats = 0;
 
     data.stats.forEach(statObj => {
-        const statName = capitalize(statObj.stat.name);
+        const statName = statObj.stat.name;
         const statValue = statObj.base_stat;
-        statsDetail[statName] = statValue;
         totalStats += statValue;
+        if (statMappings[statName]) {
+            processedStats.push({
+                name: statMappings[statName].short,
+                value: statValue,
+                className: statMappings[statName].className
+            });
+        }
     });
 
     return {
         name: capitalize(data.name),
-        stats: statsDetail,
+        stats: processedStats,
+        types: types,
         totalStats: totalStats,
         sprite: data.sprites.front_default,
         cry: data.cries?.legacy || data.cries?.latest
@@ -51,34 +71,44 @@ function generatePokemonCard(pokemon, teamId) {
     nameElement.classList.add('pokemon-name');
     nameElement.textContent = pokemon.name;
 
-    const statsTable = document.createElement('table');
-    statsTable.classList.add('pokemon-stats');
-
-    Object.entries(pokemon.stats).forEach(([stat, value]) => {
-        const row = document.createElement('tr');
-        const statNameCell = document.createElement('td');
-        statNameCell.textContent = stat;
-        const statValueCell = document.createElement('td');
-        statValueCell.textContent = value;
-        row.appendChild(statNameCell);
-        row.appendChild(statValueCell);
-        statsTable.appendChild(row);
+    const typesContainer = document.createElement('div');
+    typesContainer.classList.add('types-container');
+    pokemon.types.forEach(type => {
+        const typeBubble = document.createElement('span');
+        typeBubble.classList.add('type-bubble', `type-${type}`);
+        typeBubble.textContent = capitalize(type);
+        typesContainer.appendChild(typeBubble);
     });
 
-    const totalRow = document.createElement('tr');
-    const totalLabel = document.createElement('td');
-    totalLabel.textContent = 'Total';
-    totalLabel.style.fontWeight = 'bold';
-    const totalValue = document.createElement('td');
-    totalValue.textContent = pokemon.totalStats;
-    totalValue.style.fontWeight = 'bold';
-    totalRow.appendChild(totalLabel);
-    totalRow.appendChild(totalValue);
-    statsTable.appendChild(totalRow);
+
+    const statsGrid = document.createElement('div');
+    statsGrid.classList.add('pokemon-stats-grid');
+
+    pokemon.stats.forEach(stat => {
+        const statBubble = document.createElement('div');
+        statBubble.classList.add('stat-bubble', stat.className);
+
+        const statName = document.createElement('div');
+        statName.classList.add('stat-name');
+        statName.textContent = stat.name;
+
+        const statValue = document.createElement('div');
+        statValue.textContent = stat.value;
+
+        statBubble.appendChild(statName);
+        statBubble.appendChild(statValue);
+        statsGrid.appendChild(statBubble);
+    });
+
+    const totalStatsElement = document.createElement('div');
+    totalStatsElement.classList.add('pokemon-total-stats');
+    totalStatsElement.innerHTML = `Total: <strong>${pokemon.totalStats}</strong>`;
 
     card.appendChild(img);
     card.appendChild(nameElement);
-    card.appendChild(statsTable);
+    card.appendChild(typesContainer);
+    card.appendChild(statsGrid);
+    card.appendChild(totalStatsElement);
     teamGrid.appendChild(card);
 
     teamScore.textContent = parseInt(teamScore.textContent) + pokemon.totalStats;
@@ -110,12 +140,14 @@ async function determineWinner() {
     const team1Text = document.querySelector("#team1 .winner-text");
     const team2Text = document.querySelector("#team2 .winner-text");
 
-    team1.classList.remove("winner");
-    team2.classList.remove("winner");
+    // Reset previous winner/tie states
+    team1.classList.remove("winner", "tie");
+    team2.classList.remove("winner", "tie");
     team1Text.textContent = "";
     team2Text.textContent = "";
 
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Delay before announcement
+    // A short delay for suspense before showing the result
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     if (team1Score > team2Score) {
         team1.classList.add("winner");
@@ -124,7 +156,11 @@ async function determineWinner() {
         team2.classList.add("winner");
         team2Text.textContent = "Winner!";
     } else {
-        alert("It's a tie!");
+        // Handle a tie game
+        team1.classList.add("tie");
+        team2.classList.add("tie");
+        team1Text.textContent = "Tie!";
+        team2Text.textContent = "Tie!";
     }
 }
 
@@ -207,34 +243,13 @@ async function handleManualAdd(input, name) {
     const teamGrid = document.getElementById(`${teamId}-grid`);
 
     if (teamGrid.children.length >= 6) return;
+    input.value = ""; // Clear input immediately
 
     try {
-        const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
-        const data = await response.json();
-
-        const statsDetail = {};
-        let totalStats = 0;
-
-        data.stats.forEach(statObj => {
-            const statName = capitalize(statObj.stat.name.replace("-", " "));
-            const statValue = statObj.base_stat;
-            statsDetail[statName] = statValue;
-            totalStats += statValue;
-        });
-
-        const pokemon = {
-            name: capitalize(data.name),
-            stats: statsDetail,
-            totalStats,
-            sprite: data.sprites.front_default,
-            cry: data.cries?.legacy || data.cries?.latest
-        };
-
+        const pokemon = await fetchPokemon(name.toLowerCase());
         generatePokemonCard(pokemon, teamId);
-        input.value = ""; // ✅ Clear input after selection
-
     } catch (err) {
-        alert("Invalid Pokémon name.");
+        console.error(err);
+        alert(`Could not find a Pokémon named "${name}". Please try again.`);
     }
 }
-
