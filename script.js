@@ -49,6 +49,15 @@ async function addPokemon(teamId) {
     generatePokemonCard(pokemon, teamId);
 }
 
+function setTeamControlsState(teamId, disabled) {
+    const teamContainer = document.getElementById(teamId);
+    if (teamContainer) {
+        teamContainer.querySelector(`#${teamId}-btn`).disabled = disabled;
+        teamContainer.querySelector('.randomise-btn').disabled = disabled;
+        teamContainer.querySelector('.poke-input').disabled = disabled;
+    }
+}
+
 function generatePokemonCard(pokemon, teamId) {
     const teamGrid = document.getElementById(`${teamId}-grid`);
     const teamScore = document.getElementById(`${teamId}-score`);
@@ -137,9 +146,8 @@ function generatePokemonCard(pokemon, teamId) {
     teamScore.textContent = parseInt(teamScore.textContent) + pokemon.totalStats;
 
     if (teamGrid.children.length >= 6) {
-        teamButton.disabled = true;
+        setTeamControlsState(teamId, true);
     }
-
     checkForWinner();
 }
 
@@ -154,8 +162,7 @@ function removePokemon(card, teamId) {
     // Remove the card from the grid
     card.remove();
 
-    // The team is no longer full, so the 'Add' button should be enabled
-    teamButton.disabled = false;
+    setTeamControlsState(teamId, false);
 
     // A pokemon was removed, so the previous winner/tie state is invalid.
     // Reset the state for both teams.
@@ -178,8 +185,7 @@ function clearTeam(teamId) {
     // Reset score
     teamScoreEl.textContent = '0';
 
-    // Re-enable the 'Add' button
-    teamButton.disabled = false;
+    setTeamControlsState(teamId, false);
 
     // A team was cleared, so the previous winner/tie state is invalid.
     const team1 = document.getElementById("team1");
@@ -193,9 +199,8 @@ function clearTeam(teamId) {
 async function randomiseTeam(teamId) {
     clearTeam(teamId);
 
-    const teamContainer = document.getElementById(teamId);
-    const buttons = teamContainer.querySelectorAll('.button-container button');
-    buttons.forEach(b => b.disabled = true);
+    // Disable controls while the team is being generated
+    setTeamControlsState(teamId, true);
 
     try {
         const promises = [];
@@ -208,11 +213,8 @@ async function randomiseTeam(teamId) {
     } catch (error) {
         console.error("Failed to randomise team:", error);
         alert("An error occurred while randomising the team. Please try again.");
-    } finally {
-        buttons.forEach(b => b.disabled = false);
-        if (document.getElementById(`${teamId}-grid`).children.length >= 6) {
-            document.getElementById(`${teamId}-btn`).disabled = true;
-        }
+        // If it fails, re-enable the controls since the team is empty
+        setTeamControlsState(teamId, false);
     }
 }
 
@@ -277,6 +279,8 @@ loadAllPokemonNames();
 document.addEventListener("DOMContentLoaded", () => {
     const inputs = document.querySelectorAll(".poke-input");
     inputs.forEach(input => setupAutocomplete(input));
+
+    document.querySelector('.teams').addEventListener('click', handleTeamNameClick);
 });
 
 function setupAutocomplete(input) {
@@ -321,7 +325,6 @@ function setupAutocomplete(input) {
     
             if (selectedItem) {
                 const selectedName = selectedItem.textContent;
-                input.value = "";
                 list.innerHTML = "";
                 currentIndex = -1;
                 handleManualAdd(input, selectedName);
@@ -333,6 +336,61 @@ function setupAutocomplete(input) {
         });
     });
 }
+
+function handleTeamNameClick(e) {
+    // Check if a team-name span was clicked and it's not already being edited
+    if (e.target.classList.contains('team-name') && !e.target.isEditing) {
+        const nameSpan = e.target;
+        nameSpan.isEditing = true; // Flag to prevent re-triggering
+
+        const h2 = nameSpan.parentNode;
+        const currentName = nameSpan.textContent;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = currentName;
+        input.classList.add('team-name-input');
+
+        const saveChanges = () => {
+            const newName = input.value.trim();
+            // Revert to original name if the input is empty
+            nameSpan.textContent = newName && newName.length > 0 ? newName : currentName;
+            h2.replaceChild(nameSpan, input);
+            nameSpan.isEditing = false; // Reset flag
+        };
+
+        input.addEventListener('blur', saveChanges, { once: true });
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                input.blur();
+            } else if (event.key === 'Escape') {
+                input.value = currentName; // Revert changes on Escape
+                input.blur();
+            } else if (event.key === 'Tab') {
+                event.preventDefault(); // Stop browser from tabbing away
+                input.blur(); // This will save the changes via the blur listener
+
+                // Find the next team to edit
+                const currentTeam = nameSpan.closest('.team');
+                const allTeams = Array.from(document.querySelectorAll('.team'));
+                const currentIndex = allTeams.indexOf(currentTeam);
+                const nextTeam = allTeams[currentIndex + 1]; // Get the next team element
+
+                if (nextTeam) {
+                    nextTeam.querySelector('.team-name')?.click();
+                } else {
+                    // We are on the last team, so focus the first team's input
+                    const firstTeamInput = document.querySelector('#team1 .poke-input');
+                    firstTeamInput?.focus();
+                }
+            }
+        });
+
+        h2.replaceChild(input, nameSpan);
+        input.focus();
+        input.select();
+    }
+}
+
 async function handleManualAdd(input, name) {
     const teamId = input.closest(".team").id;
     const teamGrid = document.getElementById(`${teamId}-grid`);
@@ -343,6 +401,11 @@ async function handleManualAdd(input, name) {
     try {
         const pokemon = await fetchPokemon(name.toLowerCase());
         generatePokemonCard(pokemon, teamId);
+
+        // If team 1 is now full, focus team 2's input for a smoother workflow
+        if (teamId === 'team1' && teamGrid.children.length === 6) {
+            document.querySelector('#team2 .poke-input')?.focus();
+        }
     } catch (err) {
         console.error(err);
         alert(`Could not find a Pokémon named "${name}". Please try again.`);

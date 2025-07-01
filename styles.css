@@ -123,6 +123,12 @@ button:hover {
     transform: scale(1.02);
 }
 
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none; /* Prevents hover and click events */
+}
+
 .button-container {
     display: flex;
     gap: 0.5rem;
@@ -179,6 +185,11 @@ button:hover {
     border-color: var(--secondary-accent);
 }
 
+.poke-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .suggestions {
     list-style-type: none;
     position: absolute;
@@ -197,7 +208,8 @@ button:hover {
     transition: background-color 0.2s ease;
 }
 
-.suggestions li:hover {
+.suggestions li:hover,
+.suggestions li.highlighted {
     background-color: var(--primary-accent);
 }
 
@@ -269,6 +281,26 @@ button:hover {
 .pokemon-name {
     font-weight: bold;
     font-size: 1.1rem;
+}
+
+.team-name {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    padding: 0 0.25rem;
+    border-radius: 4px;
+}
+
+.team-name:hover {
+    background-color: rgba(255,255,255,0.1);
+}
+
+.team-name-input {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid var(--secondary-accent);
+    color: var(--text-color);
+    font: inherit; /* Inherits h2 font styles */
+    width: 60%;
 }
 
 .pokedex-link {
