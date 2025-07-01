@@ -21,18 +21,18 @@ async function fetchPokemon(id) {
     };
 }
 
-
 async function addPokemon(teamId) {
-    const teamGrid = document.getElementById(`${teamId}-grid`);
-    const teamScore = document.getElementById(`${teamId}-score`);
-    const teamButton = document.getElementById(`${teamId}-btn`);
-
-    if (teamGrid.children.length >= 6) {
-        return;
-    }
+    if (document.getElementById(`${teamId}-grid`).children.length >= 6) return;
 
     const id = Math.floor(Math.random() * 251) + 1;
     const pokemon = await fetchPokemon(id);
+    generatePokemonCard(pokemon, teamId);
+}
+
+function generatePokemonCard(pokemon, teamId) {
+    const teamGrid = document.getElementById(`${teamId}-grid`);
+    const teamScore = document.getElementById(`${teamId}-score`);
+    const teamButton = document.getElementById(`${teamId}-btn`);
 
     const card = document.createElement('div');
     card.classList.add('pokemon-card');
@@ -41,11 +41,9 @@ async function addPokemon(teamId) {
     img.src = pokemon.sprite;
     img.alt = pokemon.name;
     img.classList.add('pokemon-sprite');
-
     img.addEventListener('click', () => {
         if (pokemon.cry) {
-            let audio = new Audio(pokemon.cry);
-            audio.play();
+            new Audio(pokemon.cry).play();
         }
     });
 
@@ -67,6 +65,17 @@ async function addPokemon(teamId) {
         statsTable.appendChild(row);
     });
 
+    const totalRow = document.createElement('tr');
+    const totalLabel = document.createElement('td');
+    totalLabel.textContent = 'Total';
+    totalLabel.style.fontWeight = 'bold';
+    const totalValue = document.createElement('td');
+    totalValue.textContent = pokemon.totalStats;
+    totalValue.style.fontWeight = 'bold';
+    totalRow.appendChild(totalLabel);
+    totalRow.appendChild(totalValue);
+    statsTable.appendChild(totalRow);
+
     card.appendChild(img);
     card.appendChild(nameElement);
     card.appendChild(statsTable);
@@ -78,9 +87,9 @@ async function addPokemon(teamId) {
         teamButton.disabled = true;
     }
 
-    // Check if both teams are full and determine winner
     checkForWinner();
 }
+
 
 function checkForWinner() {
     const team1Full = document.getElementById("team1-grid").children.length === 6;
@@ -122,3 +131,110 @@ async function determineWinner() {
 function capitalize(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
+
+
+
+let allPokemonNames = [];
+
+async function loadAllPokemonNames() {
+    const res = await fetch("https://pokeapi.co/api/v2/pokemon?limit=1000");
+    const data = await res.json();
+    allPokemonNames = data.results.map(p => capitalize(p.name));
+}
+loadAllPokemonNames();
+
+document.addEventListener("DOMContentLoaded", () => {
+    const inputs = document.querySelectorAll(".poke-input");
+    inputs.forEach(input => setupAutocomplete(input));
+});
+
+function setupAutocomplete(input) {
+    const wrapper = input.parentElement;
+    const list = wrapper.querySelector(".suggestions");
+    let currentIndex = -1;
+
+    input.addEventListener("input", () => {
+        const val = input.value.toLowerCase();
+        list.innerHTML = "";
+        currentIndex = -1;
+        if (!val) return;
+
+        const matches = allPokemonNames.filter(name => name.toLowerCase().startsWith(val)).slice(0, 6);
+        matches.forEach(name => {
+            const li = document.createElement("li");
+            li.textContent = name;
+            li.addEventListener("click", () => {
+                input.value = name;
+                list.innerHTML = "";
+                handleManualAdd(input, name);
+            });
+            list.appendChild(li);
+        });
+    });
+
+    input.addEventListener("keydown", (e) => {
+        const items = list.querySelectorAll("li");
+        if (e.key === "ArrowDown") {
+            currentIndex = (currentIndex + 1) % items.length;
+        } else if (e.key === "ArrowUp") {
+            currentIndex = (currentIndex - 1 + items.length) % items.length;
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            let selectedItem;
+    
+            if (currentIndex >= 0 && currentIndex < items.length) {
+                selectedItem = items[currentIndex];
+            } else if (items.length > 0) {
+                selectedItem = items[0];
+            }
+    
+            if (selectedItem) {
+                const selectedName = selectedItem.textContent;
+                input.value = "";
+                list.innerHTML = "";
+                currentIndex = -1;
+                handleManualAdd(input, selectedName);
+            }
+        }
+
+        items.forEach((item, idx) => {
+            item.classList.toggle("highlighted", idx === currentIndex);
+        });
+    });
+}
+async function handleManualAdd(input, name) {
+    const teamId = input.closest(".team").id;
+    const teamGrid = document.getElementById(`${teamId}-grid`);
+
+    if (teamGrid.children.length >= 6) return;
+
+    try {
+        const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
+        const data = await response.json();
+
+        const statsDetail = {};
+        let totalStats = 0;
+
+        data.stats.forEach(statObj => {
+            const statName = capitalize(statObj.stat.name.replace("-", " "));
+            const statValue = statObj.base_stat;
+            statsDetail[statName] = statValue;
+            totalStats += statValue;
+        });
+
+        const pokemon = {
+            name: capitalize(data.name),
+            stats: statsDetail,
+            totalStats,
+            sprite: data.sprites.front_default,
+            cry: data.cries?.legacy || data.cries?.latest
+        };
+
+        generatePokemonCard(pokemon, teamId);
+        input.value = ""; // ✅ Clear input after selection
+
+    } catch (err) {
+        alert("Invalid Pokémon name.");
+    }
+}
+

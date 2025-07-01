@@ -13,13 +13,29 @@
         <div id="team1" class="team">
             <h2>Team 1 <span class="winner-text"></span></h2>
             <p>Total Stats: <span id="team1-score">0</span></p>
-            <button id="team1-btn" onclick="addPokemon('team1')">Add Pokémon</button>
+            <button id="team1-btn" onclick="addPokemon('team1')">Add Random Pokémon</button>
+            <div class="manual-entry">
+                <p><strong>Or type to choose Pokémon:</strong></p>
+                <div class="input-wrapper">
+                    <input type="text" class="poke-input" placeholder="Enter Pokémon name..." />
+                    <ul class="suggestions"></ul>
+                </div>
+            </div>
+            
             <div id="team1-grid" class="pokemon-grid"></div>
         </div>
         <div id="team2" class="team">
             <h2>Team 2 <span class="winner-text"></span></h2>
             <p>Total Stats: <span id="team2-score">0</span></p>
-            <button id="team2-btn" onclick="addPokemon('team2')">Add Pokémon</button>
+            <button id="team2-btn" onclick="addPokemon('team2')">Add Random Pokémon</button>
+            <div class="manual-entry">
+                <p><strong>Or type to choose Pokémon:</strong></p>
+                <div class="input-wrapper">
+                    <input type="text" class="poke-input" placeholder="Enter Pokémon name..." />
+                    <ul class="suggestions"></ul>
+                </div>
+            </div>
+            
             <div id="team2-grid" class="pokemon-grid"></div>
         </div>
     </div>
