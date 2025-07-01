@@ -1,0 +1,70 @@
+body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    background-color: #f0f0f0;
+}
+
+button {
+    padding: 10px 15px;
+    font-size: 16px;
+    margin: 10px;
+    cursor: pointer;
+}
+
+.teams {
+    display: flex;
+    justify-content: center;
+    gap: 50px;
+    margin-top: 20px;
+}
+
+.team {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    width: 300px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    transition: transform 0.5s;
+}
+
+.winner {
+    animation: glow 1s infinite alternate;
+    transform: scale(1.1);
+}
+
+@keyframes glow {
+    from {
+        box-shadow: 0 0 10px rgba(255, 215, 0, 0.8);
+    }
+    to {
+        box-shadow: 0 0 20px rgba(255, 215, 0, 1);
+    }
+}
+
+.pokemon-sprite {
+    width: 80px;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.pokemon-sprite:hover {
+    transform: scale(1.2);
+}
+
+.pokemon-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 10px;
+    margin: 5px 0;
+    background: #fff;
+}
+
+.pokemon-stats {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 5px;
+    text-align: left;
+}
