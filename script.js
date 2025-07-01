@@ -56,6 +56,7 @@ function generatePokemonCard(pokemon, teamId) {
 
     const card = document.createElement('div');
     card.classList.add('pokemon-card');
+    card.dataset.totalStats = pokemon.totalStats;
 
     const img = document.createElement('img');
     img.src = pokemon.sprite;
@@ -67,9 +68,30 @@ function generatePokemonCard(pokemon, teamId) {
         }
     });
 
-    const nameElement = document.createElement('div');
+    const removeBtn = document.createElement('button');
+    removeBtn.classList.add('remove-pokemon-btn');
+    removeBtn.innerHTML = '&times;';
+    removeBtn.title = `Remove ${pokemon.name}`;
+    removeBtn.onclick = () => removePokemon(card, teamId);
+
+
+    const nameContainer = document.createElement('div');
+    nameContainer.classList.add('pokemon-name-container');
+
+    const nameElement = document.createElement('span');
     nameElement.classList.add('pokemon-name');
     nameElement.textContent = pokemon.name;
+
+    const linkElement = document.createElement('a');
+    linkElement.href = `https://pokemondb.net/pokedex/${pokemon.name.toLowerCase()}`;
+    linkElement.target = '_blank';
+    linkElement.rel = 'noopener noreferrer';
+    linkElement.classList.add('pokedex-link');
+    linkElement.title = `View ${pokemon.name} on Pokédex`;
+    linkElement.innerHTML = '&#128279;'; // Link icon
+
+    nameContainer.appendChild(nameElement);
+    nameContainer.appendChild(linkElement);
 
     const typesContainer = document.createElement('div');
     typesContainer.classList.add('types-container');
@@ -105,7 +127,8 @@ function generatePokemonCard(pokemon, teamId) {
     totalStatsElement.innerHTML = `Total: <strong>${pokemon.totalStats}</strong>`;
 
     card.appendChild(img);
-    card.appendChild(nameElement);
+    card.appendChild(removeBtn);
+    card.appendChild(nameContainer);
     card.appendChild(typesContainer);
     card.appendChild(statsGrid);
     card.appendChild(totalStatsElement);
@@ -120,6 +143,78 @@ function generatePokemonCard(pokemon, teamId) {
     checkForWinner();
 }
 
+function removePokemon(card, teamId) {
+    const teamScoreEl = document.getElementById(`${teamId}-score`);
+    const teamButton = document.getElementById(`${teamId}-btn`);
+    const pokemonStats = parseInt(card.dataset.totalStats, 10);
+
+    // Subtract stats from the team total
+    teamScoreEl.textContent = parseInt(teamScoreEl.textContent, 10) - pokemonStats;
+
+    // Remove the card from the grid
+    card.remove();
+
+    // The team is no longer full, so the 'Add' button should be enabled
+    teamButton.disabled = false;
+
+    // A pokemon was removed, so the previous winner/tie state is invalid.
+    // Reset the state for both teams.
+    const team1 = document.getElementById("team1");
+    const team2 = document.getElementById("team2");
+    team1.classList.remove("winner", "tie");
+    team2.classList.remove("winner", "tie");
+    document.querySelector("#team1 .winner-text").textContent = "";
+    document.querySelector("#team2 .winner-text").textContent = "";
+}
+
+function clearTeam(teamId) {
+    const teamGrid = document.getElementById(`${teamId}-grid`);
+    const teamScoreEl = document.getElementById(`${teamId}-score`);
+    const teamButton = document.getElementById(`${teamId}-btn`);
+
+    // Remove all pokemon cards
+    teamGrid.innerHTML = '';
+
+    // Reset score
+    teamScoreEl.textContent = '0';
+
+    // Re-enable the 'Add' button
+    teamButton.disabled = false;
+
+    // A team was cleared, so the previous winner/tie state is invalid.
+    const team1 = document.getElementById("team1");
+    const team2 = document.getElementById("team2");
+    team1.classList.remove("winner", "tie");
+    team2.classList.remove("winner", "tie");
+    document.querySelector("#team1 .winner-text").textContent = "";
+    document.querySelector("#team2 .winner-text").textContent = "";
+}
+
+async function randomiseTeam(teamId) {
+    clearTeam(teamId);
+
+    const teamContainer = document.getElementById(teamId);
+    const buttons = teamContainer.querySelectorAll('.button-container button');
+    buttons.forEach(b => b.disabled = true);
+
+    try {
+        const promises = [];
+        for (let i = 0; i < 6; i++) {
+            const id = Math.floor(Math.random() * 251) + 1;
+            promises.push(fetchPokemon(id));
+        }
+        const pokemonTeam = await Promise.all(promises);
+        pokemonTeam.forEach(pokemon => generatePokemonCard(pokemon, teamId));
+    } catch (error) {
+        console.error("Failed to randomise team:", error);
+        alert("An error occurred while randomising the team. Please try again.");
+    } finally {
+        buttons.forEach(b => b.disabled = false);
+        if (document.getElementById(`${teamId}-grid`).children.length >= 6) {
+            document.getElementById(`${teamId}-btn`).disabled = true;
+        }
+    }
+}
 
 function checkForWinner() {
     const team1Full = document.getElementById("team1-grid").children.length === 6;

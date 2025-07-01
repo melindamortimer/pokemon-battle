@@ -73,12 +73,6 @@ h1 {
     width: 100%;
     max-width: 600px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.team:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 25px rgba(233, 69, 96, 0.3);
 }
 
 .team h2 {
@@ -127,6 +121,33 @@ button {
 button:hover {
     background-color: #d43d51;
     transform: scale(1.02);
+}
+
+.button-container {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.button-container button {
+    margin-bottom: 0;
+    flex-grow: 1;
+    width: auto;
+    padding: 0.8rem 0.5rem;
+}
+
+.randomise-btn {
+    background-color: #2a9d8f; /* Teal */
+}
+.randomise-btn:hover {
+    background-color: #264653;
+}
+
+.clear-btn {
+    background-color: var(--primary-accent);
+}
+.clear-btn:hover {
+    background-color: #1c4b82;
 }
 
 .manual-entry {
@@ -193,15 +214,36 @@ button:hover {
     padding: 1rem;
     text-align: center;
     border: 1px solid #0f3460;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
     display: flex;
     flex-direction: column;
+    position: relative; /* For positioning the remove button */
     justify-content: space-between;
 }
 
-.pokemon-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+.remove-pokemon-btn {
+    position: absolute;
+    top: 5px;
+    right: 10px;
+    background-color: transparent;
+    color: var(--text-color);
+    border: none;
+    opacity: 0.5;
+    /* Override general button styles */
+    width: auto;
+    height: auto;
+    padding: 0;
+    margin: 0;
+    font-size: 24px;
+    font-weight: bold;
+    line-height: 1;
+    z-index: 5;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.remove-pokemon-btn:hover {
+    background-color: transparent;
+    opacity: 1;
+    transform: scale(1.2);
 }
 
 .pokemon-sprite {
@@ -216,10 +258,29 @@ button:hover {
     transform: scale(1.1);
 }
 
+.pokemon-name-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
 .pokemon-name {
     font-weight: bold;
-    margin-bottom: 0.75rem;
     font-size: 1.1rem;
+}
+
+.pokedex-link {
+    color: var(--text-color);
+    text-decoration: none;
+    font-size: 1rem;
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+
+.pokedex-link:hover {
+    opacity: 1;
 }
 
 .types-container {
