@@ -334,6 +334,11 @@ function setupAutocomplete(input) {
         items.forEach((item, idx) => {
             item.classList.toggle("highlighted", idx === currentIndex);
         });
+
+        // Ensure the highlighted item is visible within the scrollable list
+        if (currentIndex > -1 && items[currentIndex]) {
+            items[currentIndex].scrollIntoView({ block: 'nearest' });
+        }
     });
 }
 
