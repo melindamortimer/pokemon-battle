@@ -287,6 +287,10 @@ function capitalize(str) {
 
 // --- Battle History Logic ---
 
+let fullHistory = [];
+let displayedItemsCount = 5;
+const HISTORY_PAGE_INCREMENT = 5;
+
 function getTeamData(teamId) {
     const teamEl = document.getElementById(teamId);
     const name = teamEl.querySelector('.team-name').textContent;
@@ -325,22 +329,21 @@ async function saveCurrentBattle() {
     history.push(result);
     localStorage.setItem('battleHistory', JSON.stringify(history));
 
-    renderHistoryEntry(result, true);
-    updateWinTally();
+    loadHistory(); // Reload to show the new entry and respect pagination
 
     document.getElementById('save-results-btn').disabled = true;
-    alert('Battle results saved!');
 }
 
 function loadHistory() {
-    const history = JSON.parse(localStorage.getItem('battleHistory')) || [];
-    const historyList = document.getElementById('history-list');
-    historyList.innerHTML = ''; // Clear existing entries before loading
-    history.forEach(result => renderHistoryEntry(result));
+    fullHistory = JSON.parse(localStorage.getItem('battleHistory')) || [];
+    // Sort by date descending (newest first)
+    fullHistory.sort((a, b) => b.id - a.id);
+    displayedItemsCount = HISTORY_PAGE_INCREMENT; // Reset to the first page
+    displayHistoryPage();
     updateWinTally();
 }
 
-function renderHistoryEntry(result, prepend = false) {
+function renderHistoryEntry(result) {
     const historyList = document.getElementById('history-list');
     const entry = document.createElement('div');
     entry.className = 'history-entry';
@@ -371,11 +374,7 @@ function renderHistoryEntry(result, prepend = false) {
 
     entry.querySelector('.delete-history-btn').addEventListener('click', () => deleteHistoryEntry(result.id));
 
-    if (prepend) {
-        historyList.prepend(entry);
-    } else {
-        historyList.appendChild(entry);
-    }
+    historyList.appendChild(entry);
 }
 
 function deleteHistoryEntry(id) {
@@ -386,11 +385,87 @@ function deleteHistoryEntry(id) {
     localStorage.setItem('battleHistory', JSON.stringify(history));
 
     document.querySelector(`.history-entry[data-id="${id}"]`)?.remove();
-    updateWinTally();
+    loadHistory(); // Reload to reflect deletion and update pagination
+}
+
+function displayHistoryPage() {
+    const historyList = document.getElementById('history-list');
+    historyList.innerHTML = '';
+
+    const itemsToRender = fullHistory.slice(0, displayedItemsCount);
+    itemsToRender.forEach(result => renderHistoryEntry(result));
+
+    const showMoreBtn = document.getElementById('show-more-history-btn');
+    if (showMoreBtn) {
+        if (displayedItemsCount < fullHistory.length) {
+            showMoreBtn.style.display = 'block';
+        } else {
+            showMoreBtn.style.display = 'none';
+        }
+    }
+}
+
+function handleShowMore() {
+    displayedItemsCount += HISTORY_PAGE_INCREMENT;
+    displayHistoryPage();
+}
+
+function exportHistory() {
+    const historyString = localStorage.getItem('battleHistory');
+    if (!historyString || historyString === '[]') {
+        alert("No battle history to export.");
+        return;
+    }
+
+    const blob = new Blob([historyString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pokemon-battle-history-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function importHistory() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = readerEvent => {
+            const content = readerEvent.target.result;
+            try {
+                const importedData = JSON.parse(content);
+                if (!Array.isArray(importedData)) throw new Error("Invalid format: not an array.");
+
+                const existingHistory = JSON.parse(localStorage.getItem('battleHistory')) || [];
+                const numBefore = existingHistory.length;
+                
+                const historyMap = new Map(existingHistory.map(item => [item.id, item]));
+                importedData.forEach(item => {
+                    if (item && typeof item.id !== 'undefined') historyMap.set(item.id, item);
+                });
+                const mergedHistory = Array.from(historyMap.values());
+
+                localStorage.setItem('battleHistory', JSON.stringify(mergedHistory));
+                alert(`History imported successfully. ${mergedHistory.length - numBefore} new entries added.`);
+                loadHistory();
+            } catch (err) {
+                console.error("Import failed:", err);
+                alert("Failed to import history. The file may be corrupt or in the wrong format.");
+            }
+        };
+        reader.readAsText(file, 'UTF-8');
+    };
+    input.click();
 }
 
 function updateWinTally() {
-    const history = JSON.parse(localStorage.getItem('battleHistory')) || [];
+    const history = fullHistory; // Use the global fullHistory which is already loaded
     const tally = {};
 
     history.forEach(result => {
@@ -444,9 +519,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const historyContainer = document.createElement('div');
     historyContainer.id = 'history-container';
     historyContainer.innerHTML = `
-        <h2>Battle History</h2>
+        <div class="history-header">
+            <h2>Battle History</h2>
+            <div class="history-controls">
+                <button id="import-history-btn" class="history-control-btn" title="Import History">Import</button>
+                <button id="export-history-btn" class="history-control-btn" title="Export History">Export</button>
+            </div>
+        </div>
         <div id="win-tally-container"></div>
-        <div id="history-list"></div>`;
+        <div id="history-list"></div>
+        <div class="history-footer">
+            <button id="show-more-history-btn" class="show-more-btn" style="display: none;">Show More</button>
+        </div>`;
 
     const teamsContainer = document.querySelector('.teams');
     teamsContainer.insertAdjacentElement('afterend', saveButtonContainer);
@@ -454,6 +538,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Add event listeners for new buttons
     document.getElementById('save-results-btn').addEventListener('click', saveCurrentBattle);
+    document.getElementById('import-history-btn').addEventListener('click', importHistory);
+    document.getElementById('export-history-btn').addEventListener('click', exportHistory);
+    document.getElementById('show-more-history-btn').addEventListener('click', handleShowMore);
 
     const inputs = document.querySelectorAll(".poke-input");
     inputs.forEach(input => setupAutocomplete(input));
