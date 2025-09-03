@@ -292,9 +292,10 @@ function getTeamData(teamId) {
     const name = teamEl.querySelector('.team-name').textContent;
     const score = teamEl.querySelector(`#${teamId}-score`).textContent;
     const pokemonGrid = teamEl.querySelector(`#${teamId}-grid`);
-    const pokemon = Array.from(pokemonGrid.children).map(card => {
-        return card.querySelector('.pokemon-name').textContent;
-    });
+    const pokemon = Array.from(pokemonGrid.children).map(card => ({
+        name: card.querySelector('.pokemon-name').textContent,
+        score: parseInt(card.dataset.totalStats, 10)
+    }));
     return { name, score, pokemon };
 }
 
@@ -325,6 +326,7 @@ async function saveCurrentBattle() {
     localStorage.setItem('battleHistory', JSON.stringify(history));
 
     renderHistoryEntry(result, true);
+    updateWinTally();
 
     document.getElementById('save-results-btn').disabled = true;
     alert('Battle results saved!');
@@ -335,6 +337,7 @@ function loadHistory() {
     const historyList = document.getElementById('history-list');
     historyList.innerHTML = ''; // Clear existing entries before loading
     history.forEach(result => renderHistoryEntry(result));
+    updateWinTally();
 }
 
 function renderHistoryEntry(result, prepend = false) {
@@ -347,20 +350,23 @@ function renderHistoryEntry(result, prepend = false) {
     const isTeam2Winner = result.winner === 'team2';
     const isTie = result.winner === 'tie';
 
+    const team1PokemonList = result.team1.pokemon.map(p => `${p.name} (${p.score})`).join(', ');
+    const team2PokemonList = result.team2.pokemon.map(p => `${p.name} (${p.score})`).join(', ');
+
+    const team1WinnerTag = isTeam1Winner ? ' <span class="history-winner-tag">Winner</span>' : '';
+    const team2WinnerTag = isTeam2Winner ? ' <span class="history-winner-tag">Winner</span>' : '';
+    const tieTag = isTie ? ' <span class="history-tie-tag">Tie</span>' : '';
+
     entry.innerHTML = `
         <button class="delete-history-btn" title="Delete this entry">&times;</button>
         <div class="history-meta"><span>${result.date}</span></div>
-        <div class="history-teams-container">
-            <div class="history-team ${isTeam1Winner ? 'winner' : ''} ${isTie ? 'tie' : ''}">
-                <h3>${result.team1.name} ${isTeam1Winner ? '(Winner)' : ''} ${isTie ? '(Tie)' : ''}</h3>
-                <p>Score: <strong>${result.team1.score}</strong></p>
-                <div class="history-pokemon-list">${result.team1.pokemon.join(', ')}</div>
-            </div>
-            <div class="history-team ${isTeam2Winner ? 'winner' : ''} ${isTie ? 'tie' : ''}">
-                <h3>${result.team2.name} ${isTeam2Winner ? '(Winner)' : ''} ${isTie ? '(Tie)' : ''}</h3>
-                <p>Score: <strong>${result.team2.score}</strong></p>
-                <div class="history-pokemon-list">${result.team2.pokemon.join(', ')}</div>
-            </div>
+        <div class="history-team-compact">
+            <h3>${result.team1.name} (${result.team1.score})${team1WinnerTag}${tieTag}</h3>
+            <div class="history-pokemon-list">${team1PokemonList}</div>
+        </div>
+        <div class="history-team-compact">
+            <h3>${result.team2.name} (${result.team2.score})${team2WinnerTag}${tieTag}</h3>
+            <div class="history-pokemon-list">${team2PokemonList}</div>
         </div>`;
 
     entry.querySelector('.delete-history-btn').addEventListener('click', () => deleteHistoryEntry(result.id));
@@ -380,15 +386,45 @@ function deleteHistoryEntry(id) {
     localStorage.setItem('battleHistory', JSON.stringify(history));
 
     document.querySelector(`.history-entry[data-id="${id}"]`)?.remove();
+    updateWinTally();
 }
 
-function clearAllHistory() {
-    if (!confirm('Are you sure you want to delete ALL battle history? This cannot be undone.')) return;
+function updateWinTally() {
+    const history = JSON.parse(localStorage.getItem('battleHistory')) || [];
+    const tally = {};
 
-    localStorage.removeItem('battleHistory');
-    document.getElementById('history-list').innerHTML = '';
+    history.forEach(result => {
+        if (result.winner === 'tie') {
+            return;
+        }
+
+        const winnerTeamData = result[result.winner];
+        const winnerName = winnerTeamData.name;
+
+        if (tally[winnerName]) {
+            tally[winnerName]++;
+        } else {
+            tally[winnerName] = 1;
+        }
+    });
+
+    const tallyContainer = document.getElementById('win-tally-container');
+    tallyContainer.innerHTML = '';
+
+    // Sort by wins descending
+    const sortedTally = Object.entries(tally).sort(([, a], [, b]) => b - a);
+
+    if (sortedTally.length > 0) {
+        const list = document.createElement('ul');
+        list.className = 'win-tally-list';
+        sortedTally.forEach(([name, wins]) => {
+            const item = document.createElement('li');
+            item.innerHTML = `<strong>${name}:</strong> ${wins} win${wins > 1 ? 's' : ''}`;
+            list.appendChild(item);
+        });
+        tallyContainer.appendChild(list);
+    }
 }
-
 
 let allPokemonNames = [];
 
@@ -400,27 +436,24 @@ async function loadAllPokemonNames() {
 loadAllPokemonNames();
 
 document.addEventListener("DOMContentLoaded", () => {
-    // Create and inject main controls and history section
-    const mainControls = document.createElement('div');
-    mainControls.className = 'main-controls';
-    mainControls.innerHTML = `<button id="save-results-btn" class="save-btn" style="display: none;">Save Battle Results</button>`;
+    // Create and inject save button and history section
+    const saveButtonContainer = document.createElement('div');
+    saveButtonContainer.className = 'save-btn-container';
+    saveButtonContainer.innerHTML = `<button id="save-results-btn" class="save-btn" style="display: none;">Save Battle Results</button>`;
 
     const historyContainer = document.createElement('div');
     historyContainer.id = 'history-container';
     historyContainer.innerHTML = `
-        <div class="history-header">
-            <h2>Battle History</h2>
-            <button id="clear-history-btn" class="clear-btn" title="Clear all history">Clear All</button>
-        </div>
+        <h2>Battle History</h2>
+        <div id="win-tally-container"></div>
         <div id="history-list"></div>`;
 
-    const title = document.querySelector('h1');
-    title.insertAdjacentElement('afterend', mainControls);
+    const teamsContainer = document.querySelector('.teams');
+    teamsContainer.insertAdjacentElement('afterend', saveButtonContainer);
     document.body.appendChild(historyContainer);
 
     // Add event listeners for new buttons
     document.getElementById('save-results-btn').addEventListener('click', saveCurrentBattle);
-    document.getElementById('clear-history-btn').addEventListener('click', clearAllHistory);
 
     const inputs = document.querySelectorAll(".poke-input");
     inputs.forEach(input => setupAutocomplete(input));
