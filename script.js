@@ -288,8 +288,9 @@ function capitalize(str) {
 // --- Battle History Logic ---
 
 let fullHistory = [];
-let displayedItemsCount = 5;
-const HISTORY_PAGE_INCREMENT = 5;
+const DEFAULT_PAGE_SIZE = 5;
+let historyPageSize = DEFAULT_PAGE_SIZE;
+let currentPage = 1;
 
 function getTeamData(teamId) {
     const teamEl = document.getElementById(teamId);
@@ -338,8 +339,16 @@ function loadHistory() {
     fullHistory = JSON.parse(localStorage.getItem('battleHistory')) || [];
     // Sort by date descending (newest first)
     fullHistory.sort((a, b) => b.id - a.id);
-    displayedItemsCount = HISTORY_PAGE_INCREMENT; // Reset to the first page
-    displayHistoryPage();
+
+    const pageSizeInput = document.getElementById('history-page-size');
+    historyPageSize = parseInt(pageSizeInput.value, 10);
+    if (isNaN(historyPageSize) || historyPageSize < 1) {
+        historyPageSize = DEFAULT_PAGE_SIZE;
+        pageSizeInput.value = historyPageSize;
+    }
+
+    currentPage = 1; // Reset to the first page
+    renderHistoryWithPagination();
     updateWinTally();
 }
 
@@ -388,26 +397,102 @@ function deleteHistoryEntry(id) {
     loadHistory(); // Reload to reflect deletion and update pagination
 }
 
-function displayHistoryPage() {
+function renderHistoryWithPagination() {
     const historyList = document.getElementById('history-list');
     historyList.innerHTML = '';
 
-    const itemsToRender = fullHistory.slice(0, displayedItemsCount);
+    const startIndex = (currentPage - 1) * historyPageSize;
+    const endIndex = startIndex + historyPageSize;
+    const itemsToRender = fullHistory.slice(startIndex, endIndex);
+
     itemsToRender.forEach(result => renderHistoryEntry(result));
 
-    const showMoreBtn = document.getElementById('show-more-history-btn');
-    if (showMoreBtn) {
-        if (displayedItemsCount < fullHistory.length) {
-            showMoreBtn.style.display = 'block';
-        } else {
-            showMoreBtn.style.display = 'none';
-        }
-    }
+    renderPaginationControls();
 }
 
-function handleShowMore() {
-    displayedItemsCount += HISTORY_PAGE_INCREMENT;
-    displayHistoryPage();
+function renderPaginationControls() {
+    const controlsContainer = document.getElementById('pagination-controls');
+    controlsContainer.innerHTML = '';
+    const totalPages = Math.ceil(fullHistory.length / historyPageSize);
+
+    if (totalPages <= 1) return;
+
+    // Previous Button
+    const prevButton = document.createElement('button');
+    prevButton.textContent = '« Previous';
+    prevButton.className = 'pagination-btn';
+    prevButton.disabled = currentPage === 1;
+    prevButton.addEventListener('click', () => {
+        if (currentPage > 1) {
+            currentPage--;
+            renderHistoryWithPagination();
+        }
+    });
+    controlsContainer.appendChild(prevButton);
+
+    // Page Numbers
+    const pageNumbersContainer = document.createElement('div');
+    pageNumbersContainer.className = 'page-numbers';
+    
+    const maxPagesToShow = 5;
+    let startPage, endPage;
+
+    if (totalPages <= maxPagesToShow) {
+        startPage = 1;
+        endPage = totalPages;
+    } else {
+        const maxPagesBeforeCurrent = Math.floor(maxPagesToShow / 2);
+        const maxPagesAfterCurrent = Math.ceil(maxPagesToShow / 2) - 1;
+        if (currentPage <= maxPagesBeforeCurrent) {
+            startPage = 1;
+            endPage = maxPagesToShow;
+        } else if (currentPage + maxPagesAfterCurrent >= totalPages) {
+            startPage = totalPages - maxPagesToShow + 1;
+            endPage = totalPages;
+        } else {
+            startPage = currentPage - maxPagesBeforeCurrent;
+            endPage = currentPage + maxPagesAfterCurrent;
+        }
+    }
+    
+    if (startPage > 1) {
+        pageNumbersContainer.appendChild(createPageButton(1));
+        if (startPage > 2) {
+            const ellipsis = document.createElement('span');
+            ellipsis.textContent = '...';
+            ellipsis.className = 'pagination-ellipsis';
+            pageNumbersContainer.appendChild(ellipsis);
+        }
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        pageNumbersContainer.appendChild(createPageButton(i));
+    }
+
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            const ellipsis = document.createElement('span');
+            ellipsis.textContent = '...';
+            ellipsis.className = 'pagination-ellipsis';
+            pageNumbersContainer.appendChild(ellipsis);
+        }
+        pageNumbersContainer.appendChild(createPageButton(totalPages));
+    }
+
+    controlsContainer.appendChild(pageNumbersContainer);
+
+    // Next Button
+    const nextButton = document.createElement('button');
+    nextButton.textContent = 'Next »';
+    nextButton.className = 'pagination-btn';
+    nextButton.disabled = currentPage === totalPages;
+    nextButton.addEventListener('click', () => {
+        if (currentPage < totalPages) {
+            currentPage++;
+            renderHistoryWithPagination();
+        }
+    });
+    controlsContainer.appendChild(nextButton);
 }
 
 function exportHistory() {
@@ -522,6 +607,8 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="history-header">
             <h2>Battle History</h2>
             <div class="history-controls">
+                <label for="history-page-size" class="history-page-size-label">Per Page:</label>
+                <input type="number" id="history-page-size" class="history-page-size-input" min="1" max="50" title="Set items per page">
                 <button id="import-history-btn" class="history-control-btn" title="Import History">Import</button>
                 <button id="export-history-btn" class="history-control-btn" title="Export History">Export</button>
             </div>
@@ -529,18 +616,21 @@ document.addEventListener("DOMContentLoaded", () => {
         <div id="win-tally-container"></div>
         <div id="history-list"></div>
         <div class="history-footer">
-            <button id="show-more-history-btn" class="show-more-btn" style="display: none;">Show More</button>
+            <div id="pagination-controls"></div>
         </div>`;
 
     const teamsContainer = document.querySelector('.teams');
     teamsContainer.insertAdjacentElement('afterend', saveButtonContainer);
     document.body.appendChild(historyContainer);
 
+    const pageSizeInput = document.getElementById('history-page-size');
+    pageSizeInput.value = DEFAULT_PAGE_SIZE;
+    pageSizeInput.addEventListener('change', handlePageSizeChange);
+
     // Add event listeners for new buttons
     document.getElementById('save-results-btn').addEventListener('click', saveCurrentBattle);
     document.getElementById('import-history-btn').addEventListener('click', importHistory);
     document.getElementById('export-history-btn').addEventListener('click', exportHistory);
-    document.getElementById('show-more-history-btn').addEventListener('click', handleShowMore);
 
     const inputs = document.querySelectorAll(".poke-input");
     inputs.forEach(input => setupAutocomplete(input));
@@ -550,6 +640,36 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // Load history after other scripts have set up the page
 window.addEventListener('load', loadHistory);
+
+function handlePageSizeChange(e) {
+    let newSize = parseInt(e.target.value, 10);
+    if (isNaN(newSize) || newSize < 1) {
+        newSize = DEFAULT_PAGE_SIZE;
+        e.target.value = newSize;
+    }
+    if (newSize > 50) { // Add a max
+        newSize = 50;
+        e.target.value = newSize;
+    }
+    historyPageSize = newSize;
+    currentPage = 1; // Reset to first page
+    renderHistoryWithPagination();
+}
+
+function createPageButton(pageNumber) {
+    const pageButton = document.createElement('button');
+    pageButton.textContent = pageNumber;
+    pageButton.className = 'pagination-btn page-number';
+    if (pageNumber === currentPage) {
+        pageButton.classList.add('active');
+        pageButton.disabled = true;
+    }
+    pageButton.addEventListener('click', () => {
+        currentPage = pageNumber;
+        renderHistoryWithPagination();
+    });
+    return pageButton;
+}
 
 function setupAutocomplete(input) {
     const wrapper = input.parentElement;

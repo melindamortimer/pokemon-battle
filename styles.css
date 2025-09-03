@@ -433,6 +433,7 @@ button:disabled {
     right: 0;
     top: 50%;
     transform: translateY(-50%);
+    align-items: center;
     display: flex;
     gap: 0.5rem;
 }
@@ -444,6 +445,30 @@ button:disabled {
     width: auto;
     margin-bottom: 0;
     font-weight: normal;
+}
+
+.history-page-size-label {
+    font-size: 0.8rem;
+    margin-right: 0.5rem;
+    opacity: 0.8;
+}
+
+.history-page-size-input {
+    width: 50px;
+    padding: 0.3rem;
+    background-color: var(--dark-bg);
+    border: 1px solid var(--primary-accent);
+    border-radius: 4px;
+    color: var(--text-color);
+    font-size: 0.9rem;
+    text-align: center;
+    margin-right: 1rem;
+}
+/* Hide number input arrows */
+.history-page-size-input::-webkit-outer-spin-button,
+.history-page-size-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 
 /* --- Win Tally --- */
@@ -546,15 +571,46 @@ button:disabled {
 .history-footer {
     display: flex;
     justify-content: center;
+    margin-top: 0;
+}
+
+#pagination-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
     margin-top: 1.5rem;
 }
 
-.show-more-btn {
+.page-numbers {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.pagination-btn {
     background-color: var(--primary-accent);
-    padding: 0.7rem 2rem;
-    font-size: 1rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
     width: auto;
     margin-bottom: 0;
+    font-weight: normal;
+    min-width: 38px;
+}
+
+.pagination-btn.active {
+    background-color: var(--secondary-accent);
+    color: var(--text-color);
+    cursor: default;
+}
+
+.pagination-btn:disabled:not(.active) {
+    background-color: var(--card-bg);
+    opacity: 0.5;
+}
+
+.pagination-ellipsis {
+    padding: 0.5rem 0.25rem;
+    align-self: center;
 }
 
 /* --- Winner & Tie Animations --- */
