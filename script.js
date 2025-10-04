@@ -349,6 +349,7 @@ function loadHistory() {
 
     currentPage = 1; // Reset to the first page
     renderHistoryWithPagination();
+    updateGoatWoat();
     updateWinTally();
     renderWinDifferenceGraph();
 }
@@ -606,6 +607,81 @@ function updateWinTally() {
     }
 }
 
+function updateGoatWoat() {
+    const history = fullHistory;
+    const allTeams = [];
+
+    // Collect all teams from all battles
+    history.forEach(result => {
+        [result.team1, result.team2].forEach((team) => {
+            allTeams.push({
+                name: team.name,
+                score: parseInt(team.score),
+                pokemon: team.pokemon.map(p => ({ name: p.name, score: p.score })),
+                matchId: result.id
+            });
+        });
+    });
+
+    const goatWoatContainer = document.getElementById('goat-woat-container');
+    goatWoatContainer.innerHTML = '';
+
+    if (allTeams.length === 0) {
+        goatWoatContainer.innerHTML = '<p class="goat-woat-no-data">No battle history yet.</p>';
+        return;
+    }
+
+    // Sort by score to find highest and lowest
+    allTeams.sort((a, b) => b.score - a.score);
+
+    const goat = allTeams[0];
+    const woat = allTeams[allTeams.length - 1];
+
+    const goatSection = document.createElement('div');
+    goatSection.className = 'goat-section';
+    goatSection.innerHTML = `
+        <h3>🐐 GOAT (Greatest of All Time)</h3>
+        <div class="goat-woat-team" data-match-id="${goat.matchId}">
+            <div class="goat-woat-team-name">${goat.name}</div>
+            <div class="goat-woat-score">Total Score: ${goat.score}</div>
+            <div class="goat-woat-pokemon">${goat.pokemon.map(p => `${p.name} (${p.score})`).join(', ')}</div>
+        </div>
+    `;
+
+    const woatSection = document.createElement('div');
+    woatSection.className = 'woat-section';
+    woatSection.innerHTML = `
+        <h3>🗑️ WOAT (Worst of All Time)</h3>
+        <div class="goat-woat-team" data-match-id="${woat.matchId}">
+            <div class="goat-woat-team-name">${woat.name}</div>
+            <div class="goat-woat-score">Total Score: ${woat.score}</div>
+            <div class="goat-woat-pokemon">${woat.pokemon.map(p => `${p.name} (${p.score})`).join(', ')}</div>
+        </div>
+    `;
+
+    goatWoatContainer.appendChild(goatSection);
+    goatWoatContainer.appendChild(woatSection);
+
+    // Add click handlers to navigate to the battle
+    goatSection.querySelector('.goat-woat-team').addEventListener('click', () => scrollToBattle(goat.matchId));
+    woatSection.querySelector('.goat-woat-team').addEventListener('click', () => scrollToBattle(woat.matchId));
+}
+
+function scrollToBattle(matchId) {
+    const itemGlobalIndex = fullHistory.findIndex(h => h.id === matchId);
+    if (itemGlobalIndex === -1) return;
+
+    const targetPage = Math.floor(itemGlobalIndex / historyPageSize) + 1;
+    if (targetPage !== currentPage) {
+        currentPage = targetPage;
+        renderHistoryWithPagination();
+    }
+
+    setTimeout(() => {
+        document.querySelector(`.history-entry[data-id="${matchId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+}
+
 let graphData = []; // Store data for tooltips and clicks
 
 let allPokemonNames = [];
@@ -648,6 +724,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <div id="graph-wrapper"></div>
             <div id="graph-tooltip" style="position: absolute; pointer-events: none; opacity: 0; transition: opacity 0.2s ease;"></div>
         </div>
+        <div id="goat-woat-container"></div>
         <div id="win-tally-container"></div>
         <div id="history-list"></div>
         <div class="history-footer">
