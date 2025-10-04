@@ -530,7 +530,6 @@ button:disabled {
 }
 
 .graph-point-hover-target {
-    fill: var(--secondary-accent);
     stroke: transparent;
     cursor: pointer;
     transition: opacity 0.2s ease;
@@ -539,6 +538,22 @@ button:disabled {
 
 .graph-point-hover-target:hover {
     opacity: 0.6;
+}
+
+.graph-point-team1-win {
+    fill: var(--stat-spd); /* Green */
+}
+
+.graph-point-team2-win {
+    fill: var(--secondary-accent); /* Red */
+}
+
+.graph-point-neutral {
+    fill: var(--primary-accent); /* Neutral color for ties/starting point */
+}
+
+.graph-date-label {
+    font-size: 0.7rem;
 }
 
 #graph-tooltip {

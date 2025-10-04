@@ -1076,30 +1076,33 @@ function renderWinDifferenceGraph() {
 
     const pathString = points.map(p => `${p.x},${p.y}`).join(' L ');
 
-    const hoverCircles = points.map((p, i) =>
-        `<circle cx="${p.x}" cy="${p.y}" r="8" class="graph-point-hover-target" data-index="${i}" />`
-    ).join('');
-
-    const dateLabels = [];
-    if (historyToGraph.length > 0) {
-        const firstMatch = historyToGraph[0];
-        const lastMatch = historyToGraph[historyToGraph.length - 1];
-
-        const dateOptions = { month: 'numeric', day: 'numeric', year: '2-digit' };
-        const firstDate = new Date(firstMatch.date).toLocaleDateString(undefined, dateOptions);
-        const lastDate = new Date(lastMatch.date).toLocaleDateString(undefined, dateOptions);
-
-        // First date label (for the first match, which is at points[1])
-        dateLabels.push(`<text x="${points[1].x}" y="${svgHeight - 5}" text-anchor="middle" class="graph-label">${firstDate}</text>`);
-
-        // Last date label, if different and space allows
-        if (historyToGraph.length > 1 && firstDate !== lastDate) {
-            const lastX = points[points.length - 1].x;
-            if (lastX - points[1].x > 80) { // 80px threshold for label
-                dateLabels.push(`<text x="${lastX}" y="${svgHeight - 5}" text-anchor="middle" class="graph-label">${lastDate}</text>`);
+    const hoverCircles = points.map((p, i) => {
+        const data = graphData[i];
+        let colorClass = 'graph-point-neutral';
+        if (data.match) {
+            if (data.match.winner !== 'tie') {
+                // Check which actual team won, not just the position
+                const winnerName = data.match[data.match.winner].name;
+                if (winnerName === team1Name) {
+                    colorClass = 'graph-point-team1-win';
+                } else if (winnerName === team2Name) {
+                    colorClass = 'graph-point-team2-win';
+                }
             }
         }
-    }
+        return `<circle cx="${p.x}" cy="${p.y}" r="8" class="graph-point-hover-target ${colorClass}" data-index="${i}" />`;
+    }).join('');
+
+    const dateLabels = [];
+    const dateOptions = { month: 'numeric', day: 'numeric', year: '2-digit' };
+
+    // Add date label for each match point (skip the starting point at index 0)
+    historyToGraph.forEach((match, i) => {
+        const pointIndex = i + 1; // +1 because index 0 is the starting point
+        const date = new Date(match.date).toLocaleDateString(undefined, dateOptions);
+        const x = points[pointIndex].x;
+        dateLabels.push(`<text x="${x}" y="${svgHeight - 5}" text-anchor="middle" class="graph-label graph-date-label">${date}</text>`);
+    });
 
     const svg = `
         <svg width="100%" height="${svgHeight}" class="win-graph-svg">
