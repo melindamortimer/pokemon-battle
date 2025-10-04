@@ -307,6 +307,9 @@ function getTeamData(teamId) {
 async function saveCurrentBattle() {
     if (!isBattleConcluded) return;
 
+    // Hide any existing streak achievement notification
+    hideStreakAchievement();
+
     const team1Data = getTeamData('team1');
     const team2Data = getTeamData('team2');
 
@@ -330,12 +333,12 @@ async function saveCurrentBattle() {
     history.push(result);
     localStorage.setItem('battleHistory', JSON.stringify(history));
 
-    loadHistory(); // Reload to show the new entry and respect pagination
+    loadHistory(true); // Reload to show the new entry and check for streak breaks
 
     document.getElementById('save-results-btn').disabled = true;
 }
 
-function loadHistory() {
+function loadHistory(checkStreak = false) {
     fullHistory = JSON.parse(localStorage.getItem('battleHistory')) || [];
     // Sort by date descending (newest first)
     fullHistory.sort((a, b) => b.id - a.id);
@@ -351,6 +354,9 @@ function loadHistory() {
     renderHistoryWithPagination();
     updateGoatWoat();
     updateWinTally();
+    if (checkStreak) {
+        checkForStreakBreak();
+    }
     renderWinDifferenceGraph();
 }
 
@@ -607,6 +613,72 @@ function updateWinTally() {
     }
 }
 
+function checkForStreakBreak() {
+    if (fullHistory.length < 2) return;
+
+    const history = fullHistory;
+    const latestMatch = history[0]; // newest first
+    const uniqueTeamNames = [...new Set(history.flatMap(r => [r.team1.name, r.team2.name]))];
+
+    uniqueTeamNames.forEach(teamName => {
+        // Check if this team was in the latest match
+        const wasInLatestMatch = latestMatch.team1.name === teamName || latestMatch.team2.name === teamName;
+        if (!wasInLatestMatch) return;
+
+        // Check if this team lost or tied in the latest match
+        const lostOrTied = (latestMatch.winner === 'tie') ||
+                          (latestMatch.winner === 'team1' && latestMatch.team1.name !== teamName) ||
+                          (latestMatch.winner === 'team2' && latestMatch.team2.name !== teamName);
+
+        if (!lostOrTied) return;
+
+        // Count the streak before this match
+        let streakCount = 0;
+        for (let i = 1; i < history.length; i++) {
+            const result = history[i];
+            const wasInMatch = result.team1.name === teamName || result.team2.name === teamName;
+            if (!wasInMatch) continue;
+
+            const didWin = (result.winner === 'team1' && result.team1.name === teamName) ||
+                           (result.winner === 'team2' && result.team2.name === teamName);
+
+            if (didWin) {
+                streakCount++;
+            } else {
+                break;
+            }
+        }
+
+        // If they had a streak of 2 or more, show the achievement
+        if (streakCount >= 2) {
+            showStreakBreakAchievement(teamName, streakCount);
+        }
+    });
+}
+
+function showStreakBreakAchievement(teamName, streakCount) {
+    const achievementContainer = document.getElementById('streak-achievement');
+    achievementContainer.innerHTML = `
+        <div class="streak-break-notification">
+            <button class="streak-close-btn" title="Dismiss">&times;</button>
+            💔 <strong>${teamName}</strong>'s ${streakCount}-win streak has ended!
+        </div>
+    `;
+    achievementContainer.style.display = 'block';
+
+    // Add close button handler
+    achievementContainer.querySelector('.streak-close-btn').addEventListener('click', () => {
+        achievementContainer.style.display = 'none';
+    });
+}
+
+function hideStreakAchievement() {
+    const achievementContainer = document.getElementById('streak-achievement');
+    if (achievementContainer) {
+        achievementContainer.style.display = 'none';
+    }
+}
+
 function updateGoatWoat() {
     const history = fullHistory;
     const allTeams = [];
@@ -725,6 +797,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <div id="graph-tooltip" style="position: absolute; pointer-events: none; opacity: 0; transition: opacity 0.2s ease;"></div>
         </div>
         <div id="goat-woat-container"></div>
+        <div id="streak-achievement" style="display: none;"></div>
         <div id="win-tally-container"></div>
         <div id="history-list"></div>
         <div class="history-footer">
@@ -825,7 +898,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 // Load history after other scripts have set up the page
-window.addEventListener('load', loadHistory);
+window.addEventListener('load', () => {
+    // Always hide the streak notification on page load
+    hideStreakAchievement();
+    loadHistory();
+});
 window.addEventListener('resize', () => renderWinDifferenceGraph()); // Re-render graph on resize
 
 function handlePageSizeChange(e) {
