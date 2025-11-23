@@ -712,9 +712,35 @@ function updateGoatWoat() {
     const limitSelect = document.getElementById('goat-woat-limit');
     const limit = limitSelect ? parseInt(limitSelect.value, 10) : goatWoatLimit;
 
-    // Get top X (GOAT) and bottom X (WOAT)
-    const goats = allTeams.slice(0, limit);
-    const woats = allTeams.slice(-limit).reverse(); // reverse to show worst first
+    // Get top X (GOAT) including ties
+    let goats = [];
+    if (allTeams.length > 0) {
+        goats = allTeams.slice(0, limit);
+        // If there are more teams, check if the next team(s) are tied with the last one
+        if (allTeams.length > limit) {
+            const lastScore = goats[goats.length - 1].score;
+            let i = limit;
+            while (i < allTeams.length && allTeams[i].score === lastScore) {
+                goats.push(allTeams[i]);
+                i++;
+            }
+        }
+    }
+
+    // Get bottom X (WOAT) including ties
+    let woats = [];
+    if (allTeams.length > 0) {
+        woats = allTeams.slice(-limit).reverse(); // reverse to show worst first
+        // If there are more teams, check if teams before the cutoff are tied with the first one
+        if (allTeams.length > limit) {
+            const worstScore = woats[0].score;
+            let i = allTeams.length - limit - 1;
+            while (i >= 0 && allTeams[i].score === worstScore) {
+                woats.unshift(allTeams[i]); // Add to the beginning
+                i--;
+            }
+        }
+    }
 
     // Create GOAT section
     const goatSection = document.createElement('div');
@@ -731,11 +757,16 @@ function updateGoatWoat() {
             </thead>
             <tbody>`;
 
+    let currentRank = 1;
     goats.forEach((team, index) => {
+        // Check if this team's score is different from the previous one
+        if (index > 0 && team.score < goats[index - 1].score) {
+            currentRank = index + 1; // Skip ranks for ties
+        }
         const pokemonList = team.pokemon.map(p => `${p.name} (${p.score})`).join(', ');
         goatHTML += `
             <tr class="goat-woat-row" data-match-id="${team.matchId}">
-                <td class="rank-cell">${index + 1}</td>
+                <td class="rank-cell">${currentRank}</td>
                 <td class="team-info-cell">
                     <div class="pokemon-list-primary">${pokemonList}</div>
                     <div class="team-name-secondary">${team.name}</div>
@@ -765,11 +796,16 @@ function updateGoatWoat() {
             </thead>
             <tbody>`;
 
+    let woatRank = 1;
     woats.forEach((team, index) => {
+        // Check if this team's score is different from the previous one
+        if (index > 0 && team.score > woats[index - 1].score) {
+            woatRank = index + 1; // Skip ranks for ties
+        }
         const pokemonList = team.pokemon.map(p => `${p.name} (${p.score})`).join(', ');
         woatHTML += `
             <tr class="goat-woat-row" data-match-id="${team.matchId}">
-                <td class="rank-cell">${index + 1}</td>
+                <td class="rank-cell">${woatRank}</td>
                 <td class="team-info-cell">
                     <div class="pokemon-list-primary">${pokemonList}</div>
                     <div class="team-name-secondary">${team.name}</div>
