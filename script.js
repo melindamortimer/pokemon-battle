@@ -233,70 +233,206 @@ async function randomiseTeam(teamId) {
     }
 }
 
-async function pasteTeamFromClipboard(teamId) {
+function pasteTeamFromClipboard(teamId) {
+    openPasteModal(teamId);
+}
+
+function createPasteModal() {
+    if (document.getElementById('paste-modal')) return;
+
+    const modal = document.createElement('div');
+    modal.id = 'paste-modal';
+    modal.className = 'paste-modal';
+    modal.innerHTML = `
+        <div class="paste-modal-content">
+            <button class="paste-modal-close">&times;</button>
+            <h3>Paste Team Screenshot</h3>
+            <div id="paste-drop-zone" class="paste-drop-zone" tabindex="0">
+                <p>Press <kbd>Ctrl</kbd>+<kbd>V</kbd> or <kbd>Cmd</kbd>+<kbd>V</kbd> to paste image</p>
+                <p class="paste-hint">Or click here and paste</p>
+            </div>
+            <div id="paste-preview-container" class="paste-preview-container" style="display: none;">
+                <img id="paste-preview-image" class="paste-preview-image" />
+            </div>
+            <div id="paste-status" class="paste-status"></div>
+            <div id="paste-pokemon-list" class="paste-pokemon-list"></div>
+            <div class="paste-modal-actions">
+                <button id="paste-cancel-btn" class="paste-cancel-btn">Cancel</button>
+                <button id="paste-confirm-btn" class="paste-confirm-btn" disabled>Add to Team</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Close button
+    modal.querySelector('.paste-modal-close').addEventListener('click', closePasteModal);
+    modal.querySelector('#paste-cancel-btn').addEventListener('click', closePasteModal);
+
+    // Click outside to close
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closePasteModal();
+    });
+
+    // Focus the drop zone for keyboard events
+    const dropZone = modal.querySelector('#paste-drop-zone');
+    dropZone.addEventListener('click', () => dropZone.focus());
+}
+
+let currentPasteTeamId = null;
+let detectedPokemonNames = [];
+let isProcessingPaste = false;
+
+function openPasteModal(teamId) {
+    createPasteModal();
+    currentPasteTeamId = teamId;
+    detectedPokemonNames = [];
+    isProcessingPaste = false;
+
+    const modal = document.getElementById('paste-modal');
+    modal.style.display = 'flex';
+
+    // Reset modal state
+    document.getElementById('paste-drop-zone').style.display = 'block';
+    document.getElementById('paste-preview-container').style.display = 'none';
+    document.getElementById('paste-status').textContent = '';
+    document.getElementById('paste-pokemon-list').innerHTML = '';
+    document.getElementById('paste-confirm-btn').disabled = true;
+
+    // Focus the drop zone
+    setTimeout(() => document.getElementById('paste-drop-zone').focus(), 100);
+
+    // Add global paste listener while modal is open
+    document.addEventListener('paste', handlePasteEvent);
+}
+
+function closePasteModal() {
+    const modal = document.getElementById('paste-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    currentPasteTeamId = null;
+    detectedPokemonNames = [];
+    document.removeEventListener('paste', handlePasteEvent);
+}
+
+async function handlePasteEvent(e) {
+    const modal = document.getElementById('paste-modal');
+    if (!modal || modal.style.display === 'none') return;
+    if (isProcessingPaste) return;
+
+    e.preventDefault();
+    isProcessingPaste = true;
+
+    const items = e.clipboardData?.items;
+    if (!items) {
+        isProcessingPaste = false;
+        return;
+    }
+
+    let imageBlob = null;
+    for (const item of items) {
+        if (item.type.startsWith('image/')) {
+            imageBlob = item.getAsFile();
+            break;
+        }
+    }
+
+    if (!imageBlob) {
+        document.getElementById('paste-status').textContent = 'No image found. Please copy an image first.';
+        isProcessingPaste = false;
+        return;
+    }
+
+    // Show image preview
+    const previewImg = document.getElementById('paste-preview-image');
+    const previewContainer = document.getElementById('paste-preview-container');
+    const dropZone = document.getElementById('paste-drop-zone');
+    const statusEl = document.getElementById('paste-status');
+    const pokemonListEl = document.getElementById('paste-pokemon-list');
+
+    previewImg.src = URL.createObjectURL(imageBlob);
+    dropZone.style.display = 'none';
+    previewContainer.style.display = 'block';
+    statusEl.textContent = 'Reading image...';
+    pokemonListEl.innerHTML = '';
+
     try {
-        const clipboardItems = await navigator.clipboard.read();
-        let imageBlob = null;
-
-        for (const item of clipboardItems) {
-            const imageType = item.types.find(type => type.startsWith('image/'));
-            if (imageType) {
-                imageBlob = await item.getType(imageType);
-                break;
-            }
-        }
-
-        if (!imageBlob) {
-            alert('No image found in clipboard. Please copy a screenshot first.');
-            return;
-        }
-
-        // Disable controls while processing
-        setTeamControlsState(teamId, true);
-        const pasteBtn = document.querySelector(`#${teamId} .paste-team-btn`);
-        const originalText = pasteBtn.textContent;
-        pasteBtn.textContent = 'Reading...';
-
-        // Run OCR on the image
+        // Run OCR
         const { data: { text } } = await Tesseract.recognize(imageBlob, 'eng', {
             logger: m => {
                 if (m.status === 'recognizing text') {
-                    pasteBtn.textContent = `OCR ${Math.round(m.progress * 100)}%`;
+                    statusEl.textContent = `Reading... ${Math.round(m.progress * 100)}%`;
                 }
             }
         });
 
-        pasteBtn.textContent = 'Loading team...';
+        // Parse Pokemon names
+        detectedPokemonNames = parsePokemonFromOCR(text);
 
-        // Parse Pokemon names from OCR text
-        const pokemonNames = parsePokemonFromOCR(text);
-
-        if (pokemonNames.length === 0) {
-            alert('No Pokémon names found in the screenshot.');
-            pasteBtn.textContent = originalText;
-            setTeamControlsState(teamId, false);
+        if (detectedPokemonNames.length === 0) {
+            statusEl.textContent = 'No Pokémon detected. Try a different screenshot.';
+            document.getElementById('paste-confirm-btn').disabled = true;
+            isProcessingPaste = false;
             return;
         }
 
-        // Clear the team and add the found Pokemon
-        clearTeam(teamId);
-        setTeamControlsState(teamId, true); // Keep disabled while loading
+        statusEl.textContent = `Found ${detectedPokemonNames.length} Pokémon:`;
 
-        const promises = pokemonNames.slice(0, 6).map(name => fetchPokemon(name.toLowerCase()));
+        // Show detected Pokemon with sprites
+        pokemonListEl.innerHTML = '';
+        for (const name of detectedPokemonNames) {
+            const item = document.createElement('div');
+            item.className = 'paste-pokemon-item';
+
+            // Fetch sprite
+            try {
+                const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
+                const data = await response.json();
+                item.innerHTML = `
+                    <img src="${data.sprites.front_default}" alt="${name}" class="paste-pokemon-sprite" />
+                    <span>${name}</span>
+                `;
+            } catch {
+                item.innerHTML = `<span>${name}</span>`;
+            }
+            pokemonListEl.appendChild(item);
+        }
+
+        document.getElementById('paste-confirm-btn').disabled = false;
+
+        // Set up confirm button
+        const confirmBtn = document.getElementById('paste-confirm-btn');
+        confirmBtn.onclick = () => applyDetectedPokemon();
+
+        isProcessingPaste = false;
+
+    } catch (error) {
+        console.error('OCR failed:', error);
+        statusEl.textContent = 'Failed to read image. Please try again.';
+        isProcessingPaste = false;
+    }
+}
+
+async function applyDetectedPokemon() {
+    if (!currentPasteTeamId || detectedPokemonNames.length === 0) return;
+
+    // Save values before closing modal (which clears them)
+    const teamId = currentPasteTeamId;
+    const pokemonToAdd = [...detectedPokemonNames];
+    closePasteModal();
+
+    // Clear team and add detected Pokemon
+    clearTeam(teamId);
+    setTeamControlsState(teamId, true);
+
+    try {
+        const promises = pokemonToAdd.slice(0, 6).map(name => fetchPokemon(name.toLowerCase()));
         const pokemonTeam = await Promise.all(promises);
         pokemonTeam.forEach(pokemon => generatePokemonCard(pokemon, teamId));
-
-        pasteBtn.textContent = originalText;
     } catch (error) {
-        console.error('Failed to paste team from clipboard:', error);
-        if (error.name === 'NotAllowedError') {
-            alert('Clipboard access denied. Please allow clipboard permissions.');
-        } else {
-            alert('Failed to read team from clipboard. Please try again.');
-        }
+        console.error('Failed to load Pokemon:', error);
+        alert('Failed to load some Pokémon. Please try again.');
         setTeamControlsState(teamId, false);
-        const pasteBtn = document.querySelector(`#${teamId} .paste-team-btn`);
-        if (pasteBtn) pasteBtn.textContent = 'Paste Team Img';
     }
 }
 
