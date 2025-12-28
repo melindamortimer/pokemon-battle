@@ -56,6 +56,7 @@ function setTeamControlsState(teamId, disabled) {
     if (teamContainer) {
         teamContainer.querySelector(`#${teamId}-btn`).disabled = disabled;
         teamContainer.querySelector('.randomise-btn').disabled = disabled;
+        teamContainer.querySelector('.paste-team-btn').disabled = disabled;
         teamContainer.querySelector('.poke-input').disabled = disabled;
     }
 }
@@ -230,6 +231,102 @@ async function randomiseTeam(teamId) {
         // If it fails, re-enable the controls since the team is empty
         setTeamControlsState(teamId, false);
     }
+}
+
+async function pasteTeamFromClipboard(teamId) {
+    try {
+        const clipboardItems = await navigator.clipboard.read();
+        let imageBlob = null;
+
+        for (const item of clipboardItems) {
+            const imageType = item.types.find(type => type.startsWith('image/'));
+            if (imageType) {
+                imageBlob = await item.getType(imageType);
+                break;
+            }
+        }
+
+        if (!imageBlob) {
+            alert('No image found in clipboard. Please copy a screenshot first.');
+            return;
+        }
+
+        // Disable controls while processing
+        setTeamControlsState(teamId, true);
+        const pasteBtn = document.querySelector(`#${teamId} .paste-team-btn`);
+        const originalText = pasteBtn.textContent;
+        pasteBtn.textContent = 'Reading...';
+
+        // Run OCR on the image
+        const { data: { text } } = await Tesseract.recognize(imageBlob, 'eng', {
+            logger: m => {
+                if (m.status === 'recognizing text') {
+                    pasteBtn.textContent = `OCR ${Math.round(m.progress * 100)}%`;
+                }
+            }
+        });
+
+        pasteBtn.textContent = 'Loading team...';
+
+        // Parse Pokemon names from OCR text
+        const pokemonNames = parsePokemonFromOCR(text);
+
+        if (pokemonNames.length === 0) {
+            alert('No Pokémon names found in the screenshot.');
+            pasteBtn.textContent = originalText;
+            setTeamControlsState(teamId, false);
+            return;
+        }
+
+        // Clear the team and add the found Pokemon
+        clearTeam(teamId);
+        setTeamControlsState(teamId, true); // Keep disabled while loading
+
+        const promises = pokemonNames.slice(0, 6).map(name => fetchPokemon(name.toLowerCase()));
+        const pokemonTeam = await Promise.all(promises);
+        pokemonTeam.forEach(pokemon => generatePokemonCard(pokemon, teamId));
+
+        pasteBtn.textContent = originalText;
+    } catch (error) {
+        console.error('Failed to paste team from clipboard:', error);
+        if (error.name === 'NotAllowedError') {
+            alert('Clipboard access denied. Please allow clipboard permissions.');
+        } else {
+            alert('Failed to read team from clipboard. Please try again.');
+        }
+        setTeamControlsState(teamId, false);
+        const pasteBtn = document.querySelector(`#${teamId} .paste-team-btn`);
+        if (pasteBtn) pasteBtn.textContent = 'Paste Team Img';
+    }
+}
+
+function parsePokemonFromOCR(text) {
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    const foundPokemon = [];
+    const seen = new Set();
+
+    for (const line of lines) {
+        const lowerLine = line.toLowerCase();
+        const defaultIndex = lowerLine.indexOf('default');
+
+        if (defaultIndex !== -1) {
+            // Extract the word after "default"
+            const afterDefault = lowerLine.substring(defaultIndex + 7).trim();
+            const pokemonName = afterDefault.split(/\s+/)[0];
+
+            if (pokemonName && !seen.has(pokemonName)) {
+                // Validate against known Pokemon names
+                const match = allPokemonNames.find(name => name.toLowerCase() === pokemonName);
+                if (match) {
+                    foundPokemon.push(match);
+                    seen.add(pokemonName);
+                    if (foundPokemon.length >= 6) break;
+                }
+            }
+        }
+    }
+
+    return foundPokemon;
 }
 
 function checkForWinner() {

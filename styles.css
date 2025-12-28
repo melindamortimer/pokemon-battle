@@ -149,6 +149,13 @@ button:disabled {
     background-color: #264653;
 }
 
+.paste-team-btn {
+    background-color: #7b68ee; /* Medium slate blue */
+}
+.paste-team-btn:hover {
+    background-color: #5a4fcf;
+}
+
 .clear-btn {
     background-color: var(--primary-accent);
 }
