@@ -878,6 +878,32 @@ button:disabled {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.history-entry:hover {
+    border-color: var(--secondary-accent);
+    transform: translateY(-2px);
+}
+
+.history-entry .load-hint {
+    position: absolute;
+    bottom: 10px;
+    right: 15px;
+    font-size: 0.75rem;
+    opacity: 0;
+    color: var(--secondary-accent);
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.history-entry:hover .load-hint {
+    opacity: 0.8;
+}
+
+.history-entry .load-hint.loaded {
+    color: #2a9d8f;
 }
 
 .delete-history-btn {

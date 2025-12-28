@@ -673,11 +673,73 @@ function renderHistoryEntry(result) {
         <div class="history-team-compact">
             <h3>${result.team2.name} (${result.team2.score})${team2WinnerTag}${tieTag}</h3>
             <div class="history-pokemon-list">${team2PokemonList}</div>
-        </div>`;
+        </div>
+        <span class="load-hint">Click to Load Battle</span>`;
 
-    entry.querySelector('.delete-history-btn').addEventListener('click', () => deleteHistoryEntry(result.id));
+    entry.querySelector('.delete-history-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteHistoryEntry(result.id);
+    });
+
+    // Click to load battle into main page
+    entry.addEventListener('click', () => {
+        const hint = entry.querySelector('.load-hint');
+        hint.textContent = 'Loading...';
+        hint.classList.add('loaded');
+        hint.style.opacity = '0.8';
+        loadBattleFromHistory(result, hint);
+    });
 
     historyList.appendChild(entry);
+}
+
+async function loadBattleFromHistory(result, hintElement) {
+    // Set team names
+    document.querySelector('#team1 .team-name').textContent = result.team1.name;
+    document.querySelector('#team2 .team-name').textContent = result.team2.name;
+
+    // Clear both teams
+    clearTeam('team1');
+    clearTeam('team2');
+
+    // Disable controls while loading
+    setTeamControlsState('team1', true);
+    setTeamControlsState('team2', true);
+
+    try {
+        // Load team 1
+        const team1Promises = result.team1.pokemon.map(p => fetchPokemon(p.name.toLowerCase()));
+        const team1Pokemon = await Promise.all(team1Promises);
+        team1Pokemon.forEach(pokemon => generatePokemonCard(pokemon, 'team1'));
+
+        // Load team 2
+        const team2Promises = result.team2.pokemon.map(p => fetchPokemon(p.name.toLowerCase()));
+        const team2Pokemon = await Promise.all(team2Promises);
+        team2Pokemon.forEach(pokemon => generatePokemonCard(pokemon, 'team2'));
+
+        // Update hint text
+        if (hintElement) {
+            hintElement.textContent = 'Battle Loaded!';
+            setTimeout(() => {
+                hintElement.textContent = 'Click to Load Battle';
+                hintElement.classList.remove('loaded');
+                hintElement.style.opacity = '';
+            }, 2000);
+        }
+
+        // Scroll to top to see the loaded battle
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (error) {
+        console.error('Failed to load battle from history:', error);
+        alert('Failed to load some Pokémon. The battle data may be corrupted.');
+        setTeamControlsState('team1', false);
+        setTeamControlsState('team2', false);
+        if (hintElement) {
+            hintElement.textContent = 'Click to Load Battle';
+            hintElement.classList.remove('loaded');
+            hintElement.style.opacity = '';
+        }
+    }
 }
 
 function deleteHistoryEntry(id) {
