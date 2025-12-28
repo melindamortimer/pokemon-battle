@@ -300,6 +300,59 @@ async function pasteTeamFromClipboard(teamId) {
     }
 }
 
+function findClosestPokemonName(name) {
+    const lower = name.toLowerCase();
+
+    // 1. Exact match
+    let match = allPokemonNames.find(n => n.toLowerCase() === lower);
+    if (match) return match;
+
+    // 2. Replace underscores with hyphens (e.g., deoxys_defense → deoxys-defense)
+    const hyphenated = lower.replace(/_/g, '-');
+    match = allPokemonNames.find(n => n.toLowerCase() === hyphenated);
+    if (match) return match;
+
+    // 3. Handle special form names
+    const specialForms = {
+        'nidoran_male': 'nidoran-m',
+        'nidoran-male': 'nidoran-m',
+        'nidoran_female': 'nidoran-f',
+        'nidoran-female': 'nidoran-f',
+        'mr_mime': 'mr-mime',
+        'mime_jr': 'mime-jr',
+        'type_null': 'type-null',
+        'tapu_koko': 'tapu-koko',
+        'tapu_lele': 'tapu-lele',
+        'tapu_bulu': 'tapu-bulu',
+        'tapu_fini': 'tapu-fini',
+    };
+    if (specialForms[lower]) {
+        match = allPokemonNames.find(n => n.toLowerCase() === specialForms[lower]);
+        if (match) return match;
+    }
+    if (specialForms[hyphenated]) {
+        match = allPokemonNames.find(n => n.toLowerCase() === specialForms[hyphenated]);
+        if (match) return match;
+    }
+
+    // 4. Fuzzy match: find names that start with the same base (before underscore/hyphen)
+    const baseName = lower.split(/[_-]/)[0];
+    if (baseName.length >= 3) {
+        // Try to find a Pokemon that starts with the base name and contains similar suffixes
+        const candidates = allPokemonNames.filter(n => n.toLowerCase().startsWith(baseName));
+        if (candidates.length === 1) return candidates[0];
+
+        // If multiple candidates, try to match the suffix
+        const suffix = lower.replace(baseName, '').replace(/^[_-]/, '');
+        if (suffix) {
+            const suffixMatch = candidates.find(n => n.toLowerCase().includes(suffix.replace(/_/g, '-')));
+            if (suffixMatch) return suffixMatch;
+        }
+    }
+
+    return null;
+}
+
 function parsePokemonFromOCR(text) {
     const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
     const foundPokemon = [];
@@ -315,8 +368,8 @@ function parsePokemonFromOCR(text) {
             const pokemonName = afterDefault.split(/\s+/)[0];
 
             if (pokemonName && !seen.has(pokemonName)) {
-                // Validate against known Pokemon names
-                const match = allPokemonNames.find(name => name.toLowerCase() === pokemonName);
+                // Find closest matching Pokemon name
+                const match = findClosestPokemonName(pokemonName);
                 if (match) {
                     foundPokemon.push(match);
                     seen.add(pokemonName);
