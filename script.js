@@ -7,16 +7,150 @@ const statMappings = {
     'speed': { short: 'SPE', className: 'stat-speed' }
 };
 
+// Comprehensive Pokemon name variants map
+// Maps common alternative spellings/formats to PokeAPI format
+// Sourced from: https://github.com/jakobhoeg/vscode-pokemon
+const POKEMON_NAME_VARIANTS = {
+    // Nidoran variants
+    'nidoran_female': 'nidoran-f',
+    'nidoran_male': 'nidoran-m',
+    'nidoran-female': 'nidoran-f',
+    'nidoran-male': 'nidoran-m',
+    'nidoranf': 'nidoran-f',
+    'nidoranm': 'nidoran-m',
+    'nidoran♀': 'nidoran-f',
+    'nidoran♂': 'nidoran-m',
+    // Mr. Mime variants
+    'mrmime': 'mr-mime',
+    'mr_mime': 'mr-mime',
+    'mr.mime': 'mr-mime',
+    // Farfetch'd variants
+    'farfetchd': 'farfetchd',
+    "farfetch'd": 'farfetchd',
+    // Ho-Oh variants
+    'hooh': 'ho-oh',
+    // Mime Jr. variants
+    'mimejr': 'mime-jr',
+    'mime_jr': 'mime-jr',
+    'mime.jr': 'mime-jr',
+    // Type: Null variants
+    'typenull': 'type-null',
+    'type_null': 'type-null',
+    'type:null': 'type-null',
+    // Tapu variants
+    'tapukoko': 'tapu-koko',
+    'tapu_koko': 'tapu-koko',
+    'tapulele': 'tapu-lele',
+    'tapu_lele': 'tapu-lele',
+    'tapubulu': 'tapu-bulu',
+    'tapu_bulu': 'tapu-bulu',
+    'tapufini': 'tapu-fini',
+    'tapu_fini': 'tapu-fini',
+    // Porygon variants
+    'porygon2': 'porygon2',
+    'porygon-2': 'porygon2',
+    'porygon_2': 'porygon2',
+    'porygonz': 'porygon-z',
+    'porygon_z': 'porygon-z',
+    // Deoxys forms
+    'deoxys_normal': 'deoxys-normal',
+    'deoxys_attack': 'deoxys-attack',
+    'deoxys_defense': 'deoxys-defense',
+    'deoxys_speed': 'deoxys-speed',
+    'deoxysnormal': 'deoxys-normal',
+    'deoxysattack': 'deoxys-attack',
+    'deoxysdefense': 'deoxys-defense',
+    'deoxysspeed': 'deoxys-speed',
+    // Unown variants (all map to base unown for PokeAPI)
+    'unown_a': 'unown', 'unown_b': 'unown', 'unown_c': 'unown', 'unown_d': 'unown',
+    'unown_e': 'unown', 'unown_f': 'unown', 'unown_g': 'unown', 'unown_h': 'unown',
+    'unown_i': 'unown', 'unown_j': 'unown', 'unown_k': 'unown', 'unown_l': 'unown',
+    'unown_m': 'unown', 'unown_n': 'unown', 'unown_o': 'unown', 'unown_p': 'unown',
+    'unown_q': 'unown', 'unown_r': 'unown', 'unown_s': 'unown', 'unown_t': 'unown',
+    'unown_u': 'unown', 'unown_v': 'unown', 'unown_w': 'unown', 'unown_x': 'unown',
+    'unown_y': 'unown', 'unown_z': 'unown', 'unown_exclamation': 'unown', 'unown_question': 'unown',
+    // Flabébé variants
+    'flabebe': 'flabebe',
+    'flabébé': 'flabebe',
+    // Kommo-o variants
+    'kommoo': 'kommo-o',
+    'kommo_o': 'kommo-o',
+    // Jangmo-o variants
+    'jangmoo': 'jangmo-o',
+    'jangmo_o': 'jangmo-o',
+    // Hakamo-o variants
+    'hakamoo': 'hakamo-o',
+    'hakamo_o': 'hakamo-o',
+    // Wo-Chien, Chien-Pao, Ting-Lu, Chi-Yu variants
+    'wochien': 'wo-chien',
+    'wo_chien': 'wo-chien',
+    'chienpao': 'chien-pao',
+    'chien_pao': 'chien-pao',
+    'tinglu': 'ting-lu',
+    'ting_lu': 'ting-lu',
+    'chiyu': 'chi-yu',
+    'chi_yu': 'chi-yu',
+    // Nidoran display names that might appear
+    'nidoran (female)': 'nidoran-f',
+    'nidoran (male)': 'nidoran-m',
+};
+
+// Build a normalized lookup Set from allPokemonNames for O(1) lookups
+let normalizedPokemonLookup = new Map(); // normalized name -> original name
+
+// Helper function to check if a Pokemon is legendary (handles formes like deoxys-speed)
+function isLegendary(pokemonName) {
+    const lower = pokemonName.toLowerCase();
+    // Direct match
+    if (pokemonCategories.legendaries.includes(lower)) return true;
+    // Check if base name (before hyphen) is legendary
+    const baseName = lower.split('-')[0];
+    return pokemonCategories.legendaries.includes(baseName);
+}
+
 // Easter Egg Pokemon Categories
 const pokemonCategories = {
     legendaries: [
+        // Gen 1
         'articuno', 'zapdos', 'moltres', 'mewtwo', 'mew',
+        // Gen 2
         'raikou', 'entei', 'suicune', 'lugia', 'ho-oh', 'celebi',
+        // Gen 3
         'regirock', 'regice', 'registeel', 'latias', 'latios',
-        'kyogre', 'groudon', 'rayquaza', 'jirachi', 'deoxys',
-        'uxie', 'mesprit', 'azelf', 'dialga', 'palkia', 'heatran',
-        'regigigas', 'giratina', 'cresselia', 'phione', 'manaphy',
-        'darkrai', 'shaymin', 'arceus'
+        'kyogre', 'kyogre-primal', 'groudon', 'groudon-primal', 'rayquaza', 'rayquaza-mega', 'jirachi',
+        'deoxys', 'deoxys-normal', 'deoxys-attack', 'deoxys-defense', 'deoxys-speed',
+        // Gen 4
+        'uxie', 'mesprit', 'azelf', 'dialga', 'dialga-origin', 'palkia', 'palkia-origin', 'heatran',
+        'regigigas', 'giratina', 'giratina-altered', 'giratina-origin',
+        'cresselia', 'phione', 'manaphy', 'darkrai',
+        'shaymin', 'shaymin-land', 'shaymin-sky', 'arceus',
+        // Gen 5
+        'victini', 'cobalion', 'terrakion', 'virizion',
+        'tornadus', 'tornadus-incarnate', 'tornadus-therian',
+        'thundurus', 'thundurus-incarnate', 'thundurus-therian',
+        'reshiram', 'zekrom',
+        'landorus', 'landorus-incarnate', 'landorus-therian',
+        'kyurem', 'kyurem-black', 'kyurem-white',
+        'keldeo', 'keldeo-ordinary', 'keldeo-resolute',
+        'meloetta', 'meloetta-aria', 'meloetta-pirouette', 'genesect',
+        // Gen 6
+        'xerneas', 'yveltal', 'zygarde', 'zygarde-10', 'zygarde-50', 'zygarde-complete',
+        'diancie', 'hoopa', 'hoopa-unbound', 'volcanion',
+        // Gen 7
+        'tapu-koko', 'tapu-lele', 'tapu-bulu', 'tapu-fini', 'cosmog', 'cosmoem',
+        'solgaleo', 'lunala', 'nihilego', 'buzzwole', 'pheromosa', 'xurkitree',
+        'celesteela', 'kartana', 'guzzlord',
+        'necrozma', 'necrozma-dusk', 'necrozma-dawn', 'necrozma-ultra',
+        'magearna', 'marshadow', 'poipole', 'naganadel', 'stakataka', 'blacephalon', 'zeraora',
+        // Gen 8
+        'zacian', 'zacian-crowned', 'zamazenta', 'zamazenta-crowned', 'eternatus', 'eternatus-eternamax',
+        'kubfu', 'urshifu', 'urshifu-single-strike', 'urshifu-rapid-strike', 'zarude',
+        'regieleki', 'regidrago', 'glastrier', 'spectrier',
+        'calyrex', 'calyrex-ice', 'calyrex-shadow',
+        // Gen 9
+        'koraidon', 'miraidon', 'wo-chien', 'chien-pao', 'ting-lu', 'chi-yu',
+        'ogerpon', 'ogerpon-wellspring', 'ogerpon-hearthflame', 'ogerpon-cornerstone',
+        'terapagos', 'terapagos-terastal', 'terapagos-stellar', 'pecharunt'
     ],
     legendaryBirds: ['articuno', 'zapdos', 'moltres'],
     towerDuo: ['lugia', 'ho-oh'],
@@ -129,8 +263,7 @@ const achievements = [
         emoji: '⭐',
         description: 'A legendary Pokémon appeared!',
         check: (team) => {
-            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
-            const count = pokemon.filter(p => pokemonCategories.legendaries.includes(p)).length;
+            const count = team.pokemon.filter(p => isLegendary(p.name)).length;
             return count === 1;
         }
     },
@@ -140,8 +273,7 @@ const achievements = [
         emoji: '🌟',
         description: 'Two legendary Pokémon unite!',
         check: (team) => {
-            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
-            const count = pokemon.filter(p => pokemonCategories.legendaries.includes(p)).length;
+            const count = team.pokemon.filter(p => isLegendary(p.name)).length;
             return count === 2;
         }
     },
@@ -151,8 +283,7 @@ const achievements = [
         emoji: '👑',
         description: 'Three or more legendaries assembled!',
         check: (team) => {
-            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
-            const count = pokemon.filter(p => pokemonCategories.legendaries.includes(p)).length;
+            const count = team.pokemon.filter(p => isLegendary(p.name)).length;
             return count >= 3;
         }
     },
@@ -414,13 +545,12 @@ function detectAchievements(teamData, isWinner) {
 // Find which Pokemon triggered a specific achievement
 function findTriggeringPokemon(achievementId, teamData, isWinner) {
     const pokemon = teamData.pokemon;
-    const names = pokemon.map(p => p.name.toLowerCase());
 
     switch (achievementId) {
         case 'legendary-encounter':
         case 'mythical-assembly':
         case 'pantheon':
-            return pokemon.filter(p => pokemonCategories.legendaries.includes(p.name.toLowerCase()));
+            return pokemon.filter(p => isLegendary(p.name));
         case 'bird-keeper':
             return pokemon.filter(p => pokemonCategories.legendaryBirds.includes(p.name.toLowerCase()));
         case 'tower-guardians':
@@ -560,8 +690,8 @@ function showAchievementPopup(allAchievements) {
     const achievementItems = allAchievements.map(a => {
         // Generate sprite images for triggering Pokemon
         const sprites = (a.triggeringPokemon || []).map(p => {
-            const pokeName = p.name.toLowerCase();
-            const spriteUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${getPokemonIdByName(pokeName)}.png`;
+            // Use stored sprite URL if available, otherwise fall back to ID lookup
+            const spriteUrl = p.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${getPokemonIdByName(p.name)}.png`;
             return `<img src="${spriteUrl}" alt="${p.name}" title="${p.name}" class="achievement-pokemon-sprite" onerror="this.style.display='none'">`;
         }).join('');
 
@@ -625,9 +755,7 @@ function detectCrossTeamAchievements(team1Data, team2Data) {
 
     if (commonPokemon.length > 0) {
         // Check if any common Pokemon is a legendary
-        const commonLegendaries = commonPokemon.filter(p =>
-            pokemonCategories.legendaries.includes(p.name.toLowerCase())
-        );
+        const commonLegendaries = commonPokemon.filter(p => isLegendary(p.name));
 
         if (commonLegendaries.length > 0) {
             earned.push({
@@ -1147,98 +1275,49 @@ async function applyDetectedPokemon() {
     }
 }
 
-function levenshteinDistance(a, b) {
-    const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
-    for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
-    for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
-    for (let j = 1; j <= b.length; j++) {
-        for (let i = 1; i <= a.length; i++) {
-            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-            matrix[j][i] = Math.min(
-                matrix[j][i - 1] + 1,
-                matrix[j - 1][i] + 1,
-                matrix[j - 1][i - 1] + cost
-            );
-        }
-    }
-    return matrix[b.length][a.length];
-}
-
+// Simplified Pokemon name matching - exact matches only, no fuzzy matching
 function findClosestPokemonName(name) {
-    const lower = name.toLowerCase();
+    if (!name || typeof name !== 'string') return null;
 
-    // 1. Exact match
-    let match = allPokemonNames.find(n => n.toLowerCase() === lower);
-    if (match) return match;
+    // Clean the input: remove non-alphanumeric chars except hyphen/underscore, then normalize
+    const cleaned = name.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase().trim();
+    if (cleaned.length === 0) return null;
 
-    // 2. Replace underscores with hyphens (e.g., deoxys_defense → deoxys-defense)
-    const hyphenated = lower.replace(/_/g, '-');
-    match = allPokemonNames.find(n => n.toLowerCase() === hyphenated);
-    if (match) return match;
-
-    // 3. Handle special form names
-    const specialForms = {
-        'nidoran_male': 'nidoran-m',
-        'nidoran-male': 'nidoran-m',
-        'nidoran_female': 'nidoran-f',
-        'nidoran-female': 'nidoran-f',
-        'mr_mime': 'mr-mime',
-        'mime_jr': 'mime-jr',
-        'type_null': 'type-null',
-        'tapu_koko': 'tapu-koko',
-        'tapu_lele': 'tapu-lele',
-        'tapu_bulu': 'tapu-bulu',
-        'tapu_fini': 'tapu-fini',
-    };
-    if (specialForms[lower]) {
-        match = allPokemonNames.find(n => n.toLowerCase() === specialForms[lower]);
-        if (match) return match;
-    }
-    if (specialForms[hyphenated]) {
-        match = allPokemonNames.find(n => n.toLowerCase() === specialForms[hyphenated]);
-        if (match) return match;
+    // 1. Check variant mappings first (handles special cases like nidoran, mr-mime, etc.)
+    if (POKEMON_NAME_VARIANTS[cleaned]) {
+        const mapped = POKEMON_NAME_VARIANTS[cleaned];
+        // Try Map first, then fall back to array search
+        if (normalizedPokemonLookup.has(mapped)) {
+            return normalizedPokemonLookup.get(mapped);
+        }
+        const arrayMatch = allPokemonNames.find(n => n.toLowerCase() === mapped);
+        if (arrayMatch) return arrayMatch;
     }
 
-    // 4. Match with hyphens/spaces stripped (e.g., "mrmime" → "mr-mime")
-    const stripped = lower.replace(/[-_\s]/g, '');
-    match = allPokemonNames.find(n => n.toLowerCase().replace(/[-_\s]/g, '') === stripped);
-    if (match) return match;
+    // 2. Direct lookup in normalized map (with array fallback)
+    if (normalizedPokemonLookup.has(cleaned)) {
+        return normalizedPokemonLookup.get(cleaned);
+    }
+    let arrayMatch = allPokemonNames.find(n => n.toLowerCase() === cleaned);
+    if (arrayMatch) return arrayMatch;
 
-    // 5. Fuzzy match: find names that start with the same base (before underscore/hyphen)
-    const baseName = lower.split(/[_-]/)[0];
-    if (baseName.length >= 3) {
-        // Try to find a Pokemon that starts with the base name and contains similar suffixes
-        const candidates = allPokemonNames.filter(n => n.toLowerCase().startsWith(baseName));
-        if (candidates.length === 1) return candidates[0];
+    // 3. Try with underscores replaced by hyphens
+    const hyphenated = cleaned.replace(/_/g, '-');
+    if (normalizedPokemonLookup.has(hyphenated)) {
+        return normalizedPokemonLookup.get(hyphenated);
+    }
+    arrayMatch = allPokemonNames.find(n => n.toLowerCase() === hyphenated);
+    if (arrayMatch) return arrayMatch;
 
-        // If multiple candidates, try to match the suffix
-        const suffix = lower.replace(baseName, '').replace(/^[_-]/, '');
-        if (suffix) {
-            const suffixMatch = candidates.find(n => n.toLowerCase().includes(suffix.replace(/_/g, '-')));
-            if (suffixMatch) return suffixMatch;
+    // 4. Try stripped version (no hyphens, underscores)
+    const stripped = cleaned.replace(/[-_]/g, '');
+    for (const pokemonName of allPokemonNames) {
+        if (pokemonName.toLowerCase().replace(/[-_]/g, '') === stripped) {
+            return pokemonName;
         }
     }
 
-    // 6. Levenshtein distance for typos (e.g., "corpish" → "corphish")
-    if (stripped.length >= 4) {
-        let bestMatch = null;
-        let bestDistance = Infinity;
-        const maxDistance = Math.max(1, Math.floor(stripped.length / 4)); // Allow ~1 error per 4 chars
-
-        for (const pokemonName of allPokemonNames) {
-            const pokemonStripped = pokemonName.toLowerCase().replace(/[-_\s]/g, '');
-            // Quick length check to avoid unnecessary calculations
-            if (Math.abs(pokemonStripped.length - stripped.length) > maxDistance) continue;
-
-            const distance = levenshteinDistance(stripped, pokemonStripped);
-            if (distance < bestDistance && distance <= maxDistance) {
-                bestDistance = distance;
-                bestMatch = pokemonName;
-            }
-        }
-        if (bestMatch) return bestMatch;
-    }
-
+    // No match found - don't guess with fuzzy matching
     return null;
 }
 
@@ -1248,22 +1327,16 @@ function parsePokemonFromOCR(text) {
     const seen = new Set();
 
     for (const line of lines) {
-        const lowerLine = line.toLowerCase();
-        const defaultIndex = lowerLine.indexOf('default');
+        // Get the last word of each line (the Pokemon API name)
+        const words = line.split(/\s+/);
+        const pokemonName = words[words.length - 1].toLowerCase();
 
-        if (defaultIndex !== -1) {
-            // Extract the word after "default"
-            const afterDefault = lowerLine.substring(defaultIndex + 7).trim();
-            const pokemonName = afterDefault.split(/\s+/)[0];
-
-            if (pokemonName && !seen.has(pokemonName)) {
-                // Find closest matching Pokemon name
-                const match = findClosestPokemonName(pokemonName);
-                if (match) {
-                    foundPokemon.push(match);
-                    seen.add(pokemonName);
-                    if (foundPokemon.length >= 6) break;
-                }
+        if (pokemonName && !seen.has(pokemonName)) {
+            const match = findClosestPokemonName(pokemonName);
+            if (match) {
+                foundPokemon.push(match);
+                seen.add(pokemonName);
+                if (foundPokemon.length >= 6) break;
             }
         }
     }
@@ -1362,7 +1435,8 @@ function getTeamData(teamId) {
     const pokemonGrid = teamEl.querySelector(`#${teamId}-grid`);
     const pokemon = Array.from(pokemonGrid.children).map(card => ({
         name: card.querySelector('.pokemon-name').textContent,
-        score: parseInt(card.dataset.totalStats, 10)
+        score: parseInt(card.dataset.totalStats, 10),
+        sprite: card.querySelector('.pokemon-sprite')?.src || null
     }));
     return { name, score, pokemon };
 }
@@ -2024,9 +2098,15 @@ let graphData = []; // Store data for tooltips and clicks
 let allPokemonNames = [];
 
 async function loadAllPokemonNames() {
-    const res = await fetch("https://pokeapi.co/api/v2/pokemon?limit=1000");
+    const res = await fetch("https://pokeapi.co/api/v2/pokemon?limit=1500");
     const data = await res.json();
     allPokemonNames = data.results.map(p => capitalize(p.name));
+
+    // Build normalized lookup map for O(1) matching
+    normalizedPokemonLookup.clear();
+    for (const name of allPokemonNames) {
+        normalizedPokemonLookup.set(name.toLowerCase(), name);
+    }
 }
 loadAllPokemonNames();
 
