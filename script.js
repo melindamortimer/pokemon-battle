@@ -1,4 +1,21 @@
-const statMappings = {
+// ==================== Global State ====================
+let isBattleConcluded = false;
+let currentBattleAchievements = { team1: [], team2: [] };
+let fullHistory = [];
+let currentPage = 1;
+let historyPageSize = 5;
+let graphData = [];
+let allPokemonNames = [];
+let normalizedPokemonLookup = new Map();
+let currentPasteTeamId = null;
+let detectedPokemonNames = [];
+let isProcessingPaste = false;
+let goatWoatLimit = 3;
+
+const DEFAULT_PAGE_SIZE = 5;
+
+// ==================== Constants ====================
+const STAT_MAPPINGS = {
     'hp': { short: 'HP', className: 'stat-hp' },
     'attack': { short: 'ATK', className: 'stat-attack' },
     'defense': { short: 'DEF', className: 'stat-defense' },
@@ -6,6 +23,89 @@ const statMappings = {
     'special-defense': { short: 'SP. DEF', className: 'stat-sp-def' },
     'speed': { short: 'SPE', className: 'stat-speed' }
 };
+
+// ==================== DOM Helper Functions ====================
+// Centralized DOM access to reduce selector duplication
+
+function getTeamElement(teamId) {
+    return document.getElementById(teamId);
+}
+
+function getTeamGrid(teamId) {
+    return document.getElementById(`${teamId}-grid`);
+}
+
+function getTeamScoreElement(teamId) {
+    return document.getElementById(`${teamId}-score`);
+}
+
+function getTeamNameElement(teamId) {
+    return document.querySelector(`#${teamId} .team-name`);
+}
+
+function getWinnerTextElement(teamId) {
+    return document.querySelector(`#${teamId} .winner-text`);
+}
+
+function getSaveButton() {
+    return document.getElementById('save-results-btn');
+}
+
+// ==================== Popup Utilities ====================
+// Creates a popup with standard behavior (close button, click outside to close)
+function createPopup(id, className, content) {
+    const existingPopup = document.getElementById(id);
+    if (existingPopup) existingPopup.remove();
+
+    const popup = document.createElement('div');
+    popup.id = id;
+    popup.className = className;
+    popup.innerHTML = content;
+    document.body.appendChild(popup);
+
+    // Show with animation
+    setTimeout(() => popup.classList.add('show'), 10);
+
+    return popup;
+}
+
+function setupPopupCloseHandlers(popup, closeButtonSelector) {
+    const closePopup = () => {
+        popup.classList.remove('show');
+        setTimeout(() => popup.remove(), 300);
+    };
+
+    popup.querySelector(closeButtonSelector)?.addEventListener('click', closePopup);
+    popup.addEventListener('click', (e) => {
+        if (e.target === popup) closePopup();
+    });
+
+    return closePopup;
+}
+
+// Removes duplicate achievements by ID
+function deduplicateAchievements(achievements) {
+    return achievements.filter((achievement, index, self) =>
+        index === self.findIndex(a => a.id === achievement.id)
+    );
+}
+
+// Resets the winner/tie state for both teams
+function resetBattleState() {
+    const team1 = getTeamElement('team1');
+    const team2 = getTeamElement('team2');
+
+    team1.classList.remove('winner', 'tie');
+    team2.classList.remove('winner', 'tie');
+    getWinnerTextElement('team1').textContent = '';
+    getWinnerTextElement('team2').textContent = '';
+
+    const saveBtn = getSaveButton();
+    if (saveBtn) {
+        saveBtn.style.display = 'none';
+    }
+    isBattleConcluded = false;
+}
 
 // Comprehensive Pokemon name variants map
 // Maps common alternative spellings/formats to PokeAPI format
@@ -94,9 +194,6 @@ const POKEMON_NAME_VARIANTS = {
     'nidoran (female)': 'nidoran-f',
     'nidoran (male)': 'nidoran-m',
 };
-
-// Build a normalized lookup Set from allPokemonNames for O(1) lookups
-let normalizedPokemonLookup = new Map(); // normalized name -> original name
 
 // Helper function to check if a Pokemon is legendary (handles formes like deoxys-speed)
 function isLegendary(pokemonName) {
@@ -518,18 +615,13 @@ const achievements = [
     }
 ];
 
-let isBattleConcluded = false;
-let currentBattleAchievements = { team1: [], team2: [] };
-
 // Detect achievements for a team
 function detectAchievements(teamData, isWinner) {
     const earned = [];
-    const pokemonNames = teamData.pokemon.map(p => p.name.toLowerCase());
 
     for (const achievement of achievements) {
         if (achievement.check(teamData, isWinner)) {
-            // Find which Pokemon triggered this achievement
-            const triggeringPokemon = findTriggeringPokemon(achievement.id, teamData, isWinner);
+            const triggeringPokemon = findTriggeringPokemon(achievement.id, teamData);
             earned.push({
                 id: achievement.id,
                 title: achievement.title,
@@ -542,75 +634,45 @@ function detectAchievements(teamData, isWinner) {
     return earned;
 }
 
-// Find which Pokemon triggered a specific achievement
-function findTriggeringPokemon(achievementId, teamData, isWinner) {
-    const pokemon = teamData.pokemon;
+// Maps achievement IDs to their triggering Pokemon filter criteria
+const ACHIEVEMENT_TRIGGER_MAP = {
+    'legendary-encounter': p => isLegendary(p.name),
+    'mythical-assembly': p => isLegendary(p.name),
+    'pantheon': p => isLegendary(p.name),
+    'bird-keeper': p => pokemonCategories.legendaryBirds.includes(p.name.toLowerCase()),
+    'tower-guardians': p => pokemonCategories.towerDuo.includes(p.name.toLowerCase()),
+    'genetic-experiment': p => pokemonCategories.mewtwoMew.includes(p.name.toLowerCase()),
+    'thats-right': p => pokemonCategories.teamRocketMeowth.includes(p.name.toLowerCase()),
+    'prepare-for-trouble': p => pokemonCategories.teamRocketOther.includes(p.name.toLowerCase()),
+    'mighty-sunkern': p => p.name.toLowerCase() === 'sunkern',
+    'splash': p => p.name.toLowerCase() === 'magikarp',
+    'magikarp-miracle': p => p.name.toLowerCase() === 'magikarp',
+    'underdog-victory': p => p.score < 250,
+    'baby-boom': p => pokemonCategories.threeStageFirstEvolutions.includes(p.name.toLowerCase()),
+    'final-form': p => pokemonCategories.finalEvolutions.includes(p.name.toLowerCase()),
+    'eeveelution-squad': p => pokemonCategories.eeveelutions.includes(p.name.toLowerCase()),
+    'i-choose-you': p => p.name.toLowerCase() === 'pikachu',
+    'pika-family': p => pokemonCategories.pikachuFamily.includes(p.name.toLowerCase()),
+    'kanto-starters': p => pokemonCategories.kantoStarters.includes(p.name.toLowerCase()),
+    'fossil-revival': p => pokemonCategories.fossils.includes(p.name.toLowerCase()),
+    'dynamic-duo': p => pokemonCategories.plusleminun.includes(p.name.toLowerCase()),
+    'dragon-tamer': p => pokemonCategories.dragons.includes(p.name.toLowerCase()),
+    'ditto-identity-crisis': p => p.name.toLowerCase() === 'ditto',
+    'slowpoke-mode': p => pokemonCategories.slowpokes.includes(p.name.toLowerCase()),
+    'pretty-in-pink': p => pokemonCategories.pinkPokemon.includes(p.name.toLowerCase())
+};
 
-    switch (achievementId) {
-        case 'legendary-encounter':
-        case 'mythical-assembly':
-        case 'pantheon':
-            return pokemon.filter(p => isLegendary(p.name));
-        case 'bird-keeper':
-            return pokemon.filter(p => pokemonCategories.legendaryBirds.includes(p.name.toLowerCase()));
-        case 'tower-guardians':
-            return pokemon.filter(p => pokemonCategories.towerDuo.includes(p.name.toLowerCase()));
-        case 'genetic-experiment':
-            return pokemon.filter(p => pokemonCategories.mewtwoMew.includes(p.name.toLowerCase()));
-        case 'thats-right':
-            return pokemon.filter(p => pokemonCategories.teamRocketMeowth.includes(p.name.toLowerCase()));
-        case 'prepare-for-trouble':
-            return pokemon.filter(p => pokemonCategories.teamRocketOther.includes(p.name.toLowerCase()));
-        case 'mighty-sunkern':
-            return pokemon.filter(p => p.name.toLowerCase() === 'sunkern');
-        case 'splash':
-        case 'magikarp-miracle':
-            return pokemon.filter(p => p.name.toLowerCase() === 'magikarp');
-        case 'underdog-victory':
-            return pokemon.filter(p => p.score < 250);
-        case 'baby-boom':
-            return pokemon.filter(p => pokemonCategories.threeStageFirstEvolutions.includes(p.name.toLowerCase()));
-        case 'final-form':
-            return pokemon.filter(p => pokemonCategories.finalEvolutions.includes(p.name.toLowerCase()));
-        case 'eeveelution-squad':
-            return pokemon.filter(p => pokemonCategories.eeveelutions.includes(p.name.toLowerCase()));
-        case 'i-choose-you':
-            return pokemon.filter(p => p.name.toLowerCase() === 'pikachu');
-        case 'pika-family':
-            return pokemon.filter(p => pokemonCategories.pikachuFamily.includes(p.name.toLowerCase()));
-        case 'kanto-starters':
-            return pokemon.filter(p => pokemonCategories.kantoStarters.includes(p.name.toLowerCase()));
-        case 'fossil-revival':
-            return pokemon.filter(p => pokemonCategories.fossils.includes(p.name.toLowerCase()));
-        case 'dynamic-duo':
-            return pokemon.filter(p => pokemonCategories.plusleminun.includes(p.name.toLowerCase()));
-        case 'dragon-tamer':
-            return pokemon.filter(p => pokemonCategories.dragons.includes(p.name.toLowerCase()));
-        case 'ditto-identity-crisis':
-            return pokemon.filter(p => p.name.toLowerCase() === 'ditto');
-        case 'slowpoke-mode':
-            return pokemon.filter(p => pokemonCategories.slowpokes.includes(p.name.toLowerCase()));
-        case 'pretty-in-pink':
-            return pokemon.filter(p => pokemonCategories.pinkPokemon.includes(p.name.toLowerCase()));
-        default:
-            return [];
-    }
+// Find which Pokemon triggered a specific achievement
+function findTriggeringPokemon(achievementId, teamData) {
+    const filterFn = ACHIEVEMENT_TRIGGER_MAP[achievementId];
+    if (!filterFn) return [];
+    return teamData.pokemon.filter(filterFn);
 }
 
 // Show single achievement detail popup (for history badge clicks)
 function showAchievementDetailPopup(achievement) {
-    // Remove existing popup
-    const existingPopup = document.getElementById('achievement-detail-popup');
-    if (existingPopup) existingPopup.remove();
-
-    const popup = document.createElement('div');
-    popup.id = 'achievement-detail-popup';
-    popup.className = 'achievement-detail-popup';
-
-    // Get criteria text based on achievement ID
     const criteria = getAchievementCriteria(achievement.id);
-
-    popup.innerHTML = `
+    const content = `
         <div class="achievement-detail-content">
             <button class="achievement-detail-close">&times;</button>
             <div class="achievement-detail-emoji">${achievement.emoji}</div>
@@ -622,24 +684,8 @@ function showAchievementDetailPopup(achievement) {
         </div>
     `;
 
-    document.body.appendChild(popup);
-
-    // Show with animation
-    setTimeout(() => popup.classList.add('show'), 10);
-
-    // Close button
-    popup.querySelector('.achievement-detail-close').addEventListener('click', () => {
-        popup.classList.remove('show');
-        setTimeout(() => popup.remove(), 300);
-    });
-
-    // Click outside to close
-    popup.addEventListener('click', (e) => {
-        if (e.target === popup) {
-            popup.classList.remove('show');
-            setTimeout(() => popup.remove(), 300);
-        }
-    });
+    const popup = createPopup('achievement-detail-popup', 'achievement-detail-popup', content);
+    setupPopupCloseHandlers(popup, '.achievement-detail-close');
 }
 
 // Get human-readable criteria for each achievement
@@ -679,18 +725,8 @@ function getAchievementCriteria(achievementId) {
 function showAchievementPopup(allAchievements) {
     if (allAchievements.length === 0) return;
 
-    // Remove existing popup
-    const existingPopup = document.getElementById('achievement-popup');
-    if (existingPopup) existingPopup.remove();
-
-    const popup = document.createElement('div');
-    popup.id = 'achievement-popup';
-    popup.className = 'achievement-popup';
-
     const achievementItems = allAchievements.map(a => {
-        // Generate sprite images for triggering Pokemon
         const sprites = (a.triggeringPokemon || []).map(p => {
-            // Use stored sprite URL if available, otherwise fall back to ID lookup
             const spriteUrl = p.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${getPokemonIdByName(p.name)}.png`;
             return `<img src="${spriteUrl}" alt="${p.name}" title="${p.name}" class="achievement-pokemon-sprite" onerror="this.style.display='none'">`;
         }).join('');
@@ -707,34 +743,18 @@ function showAchievementPopup(allAchievements) {
         `;
     }).join('');
 
-    popup.innerHTML = `
+    const content = `
         <div class="achievement-popup-content">
             <button class="achievement-popup-close">&times;</button>
-            <h3>🏅 Achievements Unlocked!</h3>
+            <h3>Achievements Unlocked!</h3>
             <div class="achievement-popup-list">
                 ${achievementItems}
             </div>
         </div>
     `;
 
-    document.body.appendChild(popup);
-
-    // Show with animation
-    setTimeout(() => popup.classList.add('show'), 10);
-
-    // Close button
-    popup.querySelector('.achievement-popup-close').addEventListener('click', () => {
-        popup.classList.remove('show');
-        setTimeout(() => popup.remove(), 300);
-    });
-
-    // Click outside to close
-    popup.addEventListener('click', (e) => {
-        if (e.target === popup) {
-            popup.classList.remove('show');
-            setTimeout(() => popup.remove(), 300);
-        }
-    });
+    const popup = createPopup('achievement-popup', 'achievement-popup', content);
+    setupPopupCloseHandlers(popup, '.achievement-popup-close');
 }
 
 // Helper to get Pokemon ID by name for sprite URLs
@@ -839,11 +859,11 @@ async function fetchPokemon(identifier) {
         const statName = statObj.stat.name;
         const statValue = statObj.base_stat;
         totalStats += statValue;
-        if (statMappings[statName]) {
+        if (STAT_MAPPINGS[statName]) {
             processedStats.push({
-                name: statMappings[statName].short,
+                name: STAT_MAPPINGS[statName].short,
                 value: statValue,
-                className: statMappings[statName].className
+                className: STAT_MAPPINGS[statName].className
             });
         }
     });
@@ -859,43 +879,50 @@ async function fetchPokemon(identifier) {
 }
 
 function getTeamPokemonNames(teamId) {
-    const grid = document.getElementById(`${teamId}-grid`);
+    const grid = getTeamGrid(teamId);
     return Array.from(grid.children).map(card =>
         card.querySelector('.pokemon-name').textContent.toLowerCase()
     );
 }
 
 async function addPokemon(teamId) {
-    if (document.getElementById(`${teamId}-grid`).children.length >= 6) return;
+    const teamGrid = getTeamGrid(teamId);
+    if (teamGrid.children.length >= 6) return;
 
     const existingNames = getTeamPokemonNames(teamId);
     let pokemon;
     let attempts = 0;
+    const MAX_ATTEMPTS = 50;
 
-    // Keep trying until we get a non-duplicate (max 50 attempts to avoid infinite loop)
     do {
         const id = Math.floor(Math.random() * 251) + 1;
         pokemon = await fetchPokemon(id);
         attempts++;
-    } while (existingNames.includes(pokemon.name.toLowerCase()) && attempts < 50);
+    } while (existingNames.includes(pokemon.name.toLowerCase()) && attempts < MAX_ATTEMPTS);
 
     generatePokemonCard(pokemon, teamId);
 }
 
 function setTeamControlsState(teamId, disabled) {
-    const teamContainer = document.getElementById(teamId);
-    if (teamContainer) {
-        teamContainer.querySelector(`#${teamId}-btn`).disabled = disabled;
-        teamContainer.querySelector('.randomise-btn').disabled = disabled;
-        teamContainer.querySelector('.paste-team-btn').disabled = disabled;
-        teamContainer.querySelector('.poke-input').disabled = disabled;
-    }
+    const teamContainer = getTeamElement(teamId);
+    if (!teamContainer) return;
+
+    const controls = [
+        `#${teamId}-btn`,
+        '.randomise-btn',
+        '.paste-team-btn',
+        '.poke-input'
+    ];
+
+    controls.forEach(selector => {
+        const element = teamContainer.querySelector(selector);
+        if (element) element.disabled = disabled;
+    });
 }
 
 function generatePokemonCard(pokemon, teamId) {
-    const teamGrid = document.getElementById(`${teamId}-grid`);
-    const teamScore = document.getElementById(`${teamId}-score`);
-    const teamButton = document.getElementById(`${teamId}-btn`);
+    const teamGrid = getTeamGrid(teamId);
+    const teamScore = getTeamScoreElement(teamId);
 
     const card = document.createElement('div');
     card.classList.add('pokemon-card');
@@ -986,60 +1013,23 @@ function generatePokemonCard(pokemon, teamId) {
 }
 
 function removePokemon(card, teamId) {
-    const teamScoreEl = document.getElementById(`${teamId}-score`);
-    const teamButton = document.getElementById(`${teamId}-btn`);
+    const teamScoreEl = getTeamScoreElement(teamId);
     const pokemonStats = parseInt(card.dataset.totalStats, 10);
 
-    // Subtract stats from the team total
     teamScoreEl.textContent = parseInt(teamScoreEl.textContent, 10) - pokemonStats;
-
-    // Remove the card from the grid
     card.remove();
-
     setTeamControlsState(teamId, false);
-
-    // A pokemon was removed, so the previous winner/tie state is invalid.
-    // Reset the state for both teams.
-    const team1 = document.getElementById("team1");
-    const team2 = document.getElementById("team2");
-    team1.classList.remove("winner", "tie");
-    team2.classList.remove("winner", "tie");
-    document.querySelector("#team1 .winner-text").textContent = "";
-    document.querySelector("#team2 .winner-text").textContent = "";
-
-    const saveBtn = document.getElementById('save-results-btn');
-    if (saveBtn) {
-        saveBtn.style.display = 'none';
-    }
-    isBattleConcluded = false;
+    resetBattleState();
 }
 
 function clearTeam(teamId) {
-    const teamGrid = document.getElementById(`${teamId}-grid`);
-    const teamScoreEl = document.getElementById(`${teamId}-score`);
-    const teamButton = document.getElementById(`${teamId}-btn`);
+    const teamGrid = getTeamGrid(teamId);
+    const teamScoreEl = getTeamScoreElement(teamId);
 
-    // Remove all pokemon cards
     teamGrid.innerHTML = '';
-
-    // Reset score
     teamScoreEl.textContent = '0';
-
     setTeamControlsState(teamId, false);
-
-    // A team was cleared, so the previous winner/tie state is invalid.
-    const team1 = document.getElementById("team1");
-    const team2 = document.getElementById("team2");
-    team1.classList.remove("winner", "tie");
-    team2.classList.remove("winner", "tie");
-    document.querySelector("#team1 .winner-text").textContent = "";
-    document.querySelector("#team2 .winner-text").textContent = "";
-
-    const saveBtn = document.getElementById('save-results-btn');
-    if (saveBtn) {
-        saveBtn.style.display = 'none';
-    }
-    isBattleConcluded = false;
+    resetBattleState();
 }
 
 async function randomiseTeam(teamId) {
@@ -1110,10 +1100,6 @@ function createPasteModal() {
     const dropZone = modal.querySelector('#paste-drop-zone');
     dropZone.addEventListener('click', () => dropZone.focus());
 }
-
-let currentPasteTeamId = null;
-let detectedPokemonNames = [];
-let isProcessingPaste = false;
 
 function openPasteModal(teamId) {
     createPasteModal();
@@ -1345,29 +1331,28 @@ function parsePokemonFromOCR(text) {
 }
 
 function checkForWinner() {
-    const team1Full = document.getElementById("team1-grid").children.length === 6;
-    const team2Full = document.getElementById("team2-grid").children.length === 6;
+    const team1Full = getTeamGrid('team1').children.length === 6;
+    const team2Full = getTeamGrid('team2').children.length === 6;
 
     if (team1Full && team2Full) {
-        setTimeout(determineWinner, 250);  // Delay before announcing the winner
+        setTimeout(determineWinner, 250);
     }
 }
 
 async function determineWinner() {
-    const team1Score = parseInt(document.getElementById("team1-score").textContent);
-    const team2Score = parseInt(document.getElementById("team2-score").textContent);
+    const team1Score = parseInt(getTeamScoreElement('team1').textContent);
+    const team2Score = parseInt(getTeamScoreElement('team2').textContent);
 
-    const team1 = document.getElementById("team1");
-    const team2 = document.getElementById("team2");
-
-    const team1Text = document.querySelector("#team1 .winner-text");
-    const team2Text = document.querySelector("#team2 .winner-text");
+    const team1 = getTeamElement('team1');
+    const team2 = getTeamElement('team2');
+    const team1Text = getWinnerTextElement('team1');
+    const team2Text = getWinnerTextElement('team2');
 
     // Reset previous winner/tie states
-    team1.classList.remove("winner", "tie");
-    team2.classList.remove("winner", "tie");
-    team1Text.textContent = "";
-    team2Text.textContent = "";
+    team1.classList.remove('winner', 'tie');
+    team2.classList.remove('winner', 'tie');
+    team1Text.textContent = '';
+    team2Text.textContent = '';
 
     // A short delay for suspense before showing the result
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -1376,42 +1361,40 @@ async function determineWinner() {
     let team2IsWinner = false;
 
     if (team1Score > team2Score) {
-        team1.classList.add("winner");
-        team1Text.textContent = "Winner!";
+        team1.classList.add('winner');
+        team1Text.textContent = 'Winner!';
         team1IsWinner = true;
     } else if (team2Score > team1Score) {
-        team2.classList.add("winner");
-        team2Text.textContent = "Winner!";
+        team2.classList.add('winner');
+        team2Text.textContent = 'Winner!';
         team2IsWinner = true;
     } else {
-        // Handle a tie game
-        team1.classList.add("tie");
-        team2.classList.add("tie");
-        team1Text.textContent = "Tie!";
-        team2Text.textContent = "Tie!";
+        team1.classList.add('tie');
+        team2.classList.add('tie');
+        team1Text.textContent = 'Tie!';
+        team2Text.textContent = 'Tie!';
     }
 
-    // Detect achievements for both teams
+    // Detect and display achievements
     const team1Data = getTeamData('team1');
     const team2Data = getTeamData('team2');
     currentBattleAchievements.team1 = detectAchievements(team1Data, team1IsWinner);
     currentBattleAchievements.team2 = detectAchievements(team2Data, team2IsWinner);
 
-    // Check for cross-team achievements (Pokemon appearing on both teams)
     const crossTeamAchievements = detectCrossTeamAchievements(team1Data, team2Data);
+    const allAchievements = [
+        ...currentBattleAchievements.team1,
+        ...currentBattleAchievements.team2,
+        ...crossTeamAchievements
+    ];
 
-    // Show achievement popup if any achievements were earned
-    const allAchievements = [...currentBattleAchievements.team1, ...currentBattleAchievements.team2, ...crossTeamAchievements];
-    // Deduplicate achievements (same achievement can appear for both teams)
-    let uniqueAchievements = allAchievements.filter((a, index, self) =>
-        index === self.findIndex(t => t.id === a.id)
+    const uniqueAchievements = filterTieredAchievements(
+        deduplicateAchievements(allAchievements)
     );
-    // Filter out lower-tier legendary achievements when higher-tier ones are present
-    uniqueAchievements = filterTieredAchievements(uniqueAchievements);
     showAchievementPopup(uniqueAchievements);
 
     // Show the save button
-    const saveBtn = document.getElementById('save-results-btn');
+    const saveBtn = getSaveButton();
     saveBtn.style.display = 'block';
     saveBtn.disabled = false;
     isBattleConcluded = true;
@@ -1423,16 +1406,10 @@ function capitalize(str) {
 
 // --- Battle History Logic ---
 
-let fullHistory = [];
-const DEFAULT_PAGE_SIZE = 5;
-let historyPageSize = DEFAULT_PAGE_SIZE;
-let currentPage = 1;
-
 function getTeamData(teamId) {
-    const teamEl = document.getElementById(teamId);
-    const name = teamEl.querySelector('.team-name').textContent;
-    const score = teamEl.querySelector(`#${teamId}-score`).textContent;
-    const pokemonGrid = teamEl.querySelector(`#${teamId}-grid`);
+    const name = getTeamNameElement(teamId).textContent;
+    const score = getTeamScoreElement(teamId).textContent;
+    const pokemonGrid = getTeamGrid(teamId);
     const pokemon = Array.from(pokemonGrid.children).map(card => ({
         name: card.querySelector('.pokemon-name').textContent,
         score: parseInt(card.dataset.totalStats, 10),
@@ -1483,7 +1460,7 @@ async function saveCurrentBattle() {
 
     loadHistory(true); // Reload to show the new entry and check for streak breaks
 
-    document.getElementById('save-results-btn').disabled = true;
+    getSaveButton().disabled = true;
 }
 
 function loadHistory(checkStreak = false) {
@@ -1534,15 +1511,11 @@ function renderHistoryEntry(result) {
             ...(result.achievements.team2 || []),
             ...(result.achievements.crossTeam || [])
         ];
-        // Deduplicate
-        let uniqueAchievements = allAchievements.filter((a, index, self) =>
-            index === self.findIndex(t => t.id === a.id)
+        historyAchievements = filterTieredAchievements(
+            deduplicateAchievements(allAchievements)
         );
-        // Filter out lower-tier legendary achievements
-        uniqueAchievements = filterTieredAchievements(uniqueAchievements);
-        historyAchievements = uniqueAchievements;
-        if (uniqueAchievements.length > 0) {
-            const badges = uniqueAchievements.map((a, idx) =>
+        if (historyAchievements.length > 0) {
+            const badges = historyAchievements.map((a, idx) =>
                 `<span class="achievement-badge" data-achievement-idx="${idx}" title="${a.title}">${a.emoji}</span>`
             ).join('');
             achievementBadgesHTML = `<div class="history-achievements">${badges}</div>`;
@@ -1592,51 +1565,45 @@ function renderHistoryEntry(result) {
 }
 
 async function loadBattleFromHistory(result, hintElement) {
-    // Set team names
-    document.querySelector('#team1 .team-name').textContent = result.team1.name;
-    document.querySelector('#team2 .team-name').textContent = result.team2.name;
+    getTeamNameElement('team1').textContent = result.team1.name;
+    getTeamNameElement('team2').textContent = result.team2.name;
 
-    // Clear both teams
     clearTeam('team1');
     clearTeam('team2');
-
-    // Disable controls while loading
     setTeamControlsState('team1', true);
     setTeamControlsState('team2', true);
 
-    try {
-        // Load team 1
-        const team1Promises = result.team1.pokemon.map(p => fetchPokemon(p.name.toLowerCase()));
-        const team1Pokemon = await Promise.all(team1Promises);
-        team1Pokemon.forEach(pokemon => generatePokemonCard(pokemon, 'team1'));
+    const resetHint = () => {
+        if (!hintElement) return;
+        hintElement.textContent = 'Click to Load Battle';
+        hintElement.classList.remove('loaded');
+        hintElement.style.opacity = '';
+    };
 
-        // Load team 2
+    try {
+        const team1Promises = result.team1.pokemon.map(p => fetchPokemon(p.name.toLowerCase()));
         const team2Promises = result.team2.pokemon.map(p => fetchPokemon(p.name.toLowerCase()));
-        const team2Pokemon = await Promise.all(team2Promises);
+
+        const [team1Pokemon, team2Pokemon] = await Promise.all([
+            Promise.all(team1Promises),
+            Promise.all(team2Promises)
+        ]);
+
+        team1Pokemon.forEach(pokemon => generatePokemonCard(pokemon, 'team1'));
         team2Pokemon.forEach(pokemon => generatePokemonCard(pokemon, 'team2'));
 
-        // Update hint text
         if (hintElement) {
             hintElement.textContent = 'Battle Loaded!';
-            setTimeout(() => {
-                hintElement.textContent = 'Click to Load Battle';
-                hintElement.classList.remove('loaded');
-                hintElement.style.opacity = '';
-            }, 2000);
+            setTimeout(resetHint, 2000);
         }
 
-        // Scroll to top to see the loaded battle
         window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
         console.error('Failed to load battle from history:', error);
-        alert('Failed to load some Pokémon. The battle data may be corrupted.');
+        alert('Failed to load some Pokemon. The battle data may be corrupted.');
         setTeamControlsState('team1', false);
         setTeamControlsState('team2', false);
-        if (hintElement) {
-            hintElement.textContent = 'Click to Load Battle';
-            hintElement.classList.remove('loaded');
-            hintElement.style.opacity = '';
-        }
+        resetHint();
     }
 }
 
@@ -1664,6 +1631,39 @@ function renderHistoryWithPagination() {
     renderPaginationControls();
 }
 
+function createPaginationEllipsis() {
+    const ellipsis = document.createElement('span');
+    ellipsis.textContent = '...';
+    ellipsis.className = 'pagination-ellipsis';
+    return ellipsis;
+}
+
+function createNavButton(text, disabled, onClick) {
+    const button = document.createElement('button');
+    button.textContent = text;
+    button.className = 'pagination-btn';
+    button.disabled = disabled;
+    button.addEventListener('click', onClick);
+    return button;
+}
+
+function calculatePageRange(totalPages, currentPage, maxPagesToShow) {
+    if (totalPages <= maxPagesToShow) {
+        return { startPage: 1, endPage: totalPages };
+    }
+
+    const maxBefore = Math.floor(maxPagesToShow / 2);
+    const maxAfter = Math.ceil(maxPagesToShow / 2) - 1;
+
+    if (currentPage <= maxBefore) {
+        return { startPage: 1, endPage: maxPagesToShow };
+    }
+    if (currentPage + maxAfter >= totalPages) {
+        return { startPage: totalPages - maxPagesToShow + 1, endPage: totalPages };
+    }
+    return { startPage: currentPage - maxBefore, endPage: currentPage + maxAfter };
+}
+
 function renderPaginationControls() {
     const controlsContainer = document.getElementById('pagination-controls');
     controlsContainer.innerHTML = '';
@@ -1671,51 +1671,25 @@ function renderPaginationControls() {
 
     if (totalPages <= 1) return;
 
+    const MAX_PAGES_TO_SHOW = 5;
+    const { startPage, endPage } = calculatePageRange(totalPages, currentPage, MAX_PAGES_TO_SHOW);
+
     // Previous Button
-    const prevButton = document.createElement('button');
-    prevButton.textContent = '« Previous';
-    prevButton.className = 'pagination-btn';
-    prevButton.disabled = currentPage === 1;
-    prevButton.addEventListener('click', () => {
+    controlsContainer.appendChild(createNavButton('Previous', currentPage === 1, () => {
         if (currentPage > 1) {
             currentPage--;
             renderHistoryWithPagination();
         }
-    });
-    controlsContainer.appendChild(prevButton);
+    }));
 
     // Page Numbers
     const pageNumbersContainer = document.createElement('div');
     pageNumbersContainer.className = 'page-numbers';
-    
-    const maxPagesToShow = 5;
-    let startPage, endPage;
 
-    if (totalPages <= maxPagesToShow) {
-        startPage = 1;
-        endPage = totalPages;
-    } else {
-        const maxPagesBeforeCurrent = Math.floor(maxPagesToShow / 2);
-        const maxPagesAfterCurrent = Math.ceil(maxPagesToShow / 2) - 1;
-        if (currentPage <= maxPagesBeforeCurrent) {
-            startPage = 1;
-            endPage = maxPagesToShow;
-        } else if (currentPage + maxPagesAfterCurrent >= totalPages) {
-            startPage = totalPages - maxPagesToShow + 1;
-            endPage = totalPages;
-        } else {
-            startPage = currentPage - maxPagesBeforeCurrent;
-            endPage = currentPage + maxPagesAfterCurrent;
-        }
-    }
-    
     if (startPage > 1) {
         pageNumbersContainer.appendChild(createPageButton(1));
         if (startPage > 2) {
-            const ellipsis = document.createElement('span');
-            ellipsis.textContent = '...';
-            ellipsis.className = 'pagination-ellipsis';
-            pageNumbersContainer.appendChild(ellipsis);
+            pageNumbersContainer.appendChild(createPaginationEllipsis());
         }
     }
 
@@ -1725,10 +1699,7 @@ function renderPaginationControls() {
 
     if (endPage < totalPages) {
         if (endPage < totalPages - 1) {
-            const ellipsis = document.createElement('span');
-            ellipsis.textContent = '...';
-            ellipsis.className = 'pagination-ellipsis';
-            pageNumbersContainer.appendChild(ellipsis);
+            pageNumbersContainer.appendChild(createPaginationEllipsis());
         }
         pageNumbersContainer.appendChild(createPageButton(totalPages));
     }
@@ -1736,17 +1707,12 @@ function renderPaginationControls() {
     controlsContainer.appendChild(pageNumbersContainer);
 
     // Next Button
-    const nextButton = document.createElement('button');
-    nextButton.textContent = 'Next »';
-    nextButton.className = 'pagination-btn';
-    nextButton.disabled = currentPage === totalPages;
-    nextButton.addEventListener('click', () => {
+    controlsContainer.appendChild(createNavButton('Next', currentPage === totalPages, () => {
         if (currentPage < totalPages) {
             currentPage++;
             renderHistoryWithPagination();
         }
-    });
-    controlsContainer.appendChild(nextButton);
+    }));
 }
 
 function exportHistory() {
@@ -1925,8 +1891,6 @@ function hideStreakAchievement() {
     }
 }
 
-let goatWoatLimit = 3; // Default number of entries to show
-
 function updateGoatWoat() {
     const history = fullHistory;
     const allTeams = [];
@@ -2093,10 +2057,6 @@ function scrollToBattle(matchId) {
     }, 150);
 }
 
-let graphData = []; // Store data for tooltips and clicks
-
-let allPokemonNames = [];
-
 async function loadAllPokemonNames() {
     const res = await fetch("https://pokeapi.co/api/v2/pokemon?limit=1500");
     const data = await res.json();
@@ -2169,7 +2129,7 @@ document.addEventListener("DOMContentLoaded", () => {
     pageSizeInput.addEventListener('change', handlePageSizeChange);
 
     // Add event listeners for new buttons
-    document.getElementById('save-results-btn').addEventListener('click', saveCurrentBattle);
+    getSaveButton().addEventListener('click', saveCurrentBattle);
     document.getElementById('import-history-btn').addEventListener('click', importHistory);
     document.getElementById('export-history-btn').addEventListener('click', exportHistory);
     document.getElementById('graph-limit').addEventListener('change', renderWinDifferenceGraph);
@@ -2179,9 +2139,8 @@ document.addEventListener("DOMContentLoaded", () => {
     inputs.forEach(input => setupAutocomplete(input));
 
     document.querySelector('.teams').addEventListener('click', handleTeamNameClick);
-});
 
-document.addEventListener('DOMContentLoaded', () => {
+    // Graph tooltip and click handlers
     const graphContainer = document.getElementById('win-graph-container');
     const tooltip = document.getElementById('graph-tooltip');
 
@@ -2191,8 +2150,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = graphData[index];
             if (!data) return;
 
-            const team1Name = document.querySelector('#team1 .team-name').textContent;
-            const team2Name = document.querySelector('#team2 .team-name').textContent;
+            const team1Name = getTeamNameElement('team1').textContent;
+            const team2Name = getTeamNameElement('team2').textContent;
 
             let content = '';
             if (data.match) {
@@ -2254,6 +2213,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
 // Load history after other scripts have set up the page
 window.addEventListener('load', () => {
     // Always hide the streak notification on page load
@@ -2410,11 +2370,11 @@ function handleTeamNameClick(e) {
 }
 
 async function handleManualAdd(input, name) {
-    const teamId = input.closest(".team").id;
-    const teamGrid = document.getElementById(`${teamId}-grid`);
+    const teamId = input.closest('.team').id;
+    const teamGrid = getTeamGrid(teamId);
 
     if (teamGrid.children.length >= 6) return;
-    input.value = ""; // Clear input immediately
+    input.value = '';
 
     try {
         const pokemon = await fetchPokemon(name.toLowerCase());
@@ -2426,7 +2386,7 @@ async function handleManualAdd(input, name) {
         }
     } catch (err) {
         console.error(err);
-        alert(`Could not find a Pokémon named "${name}". Please try again.`);
+        alert(`Could not find a Pokemon named "${name}". Please try again.`);
     }
 }
 
@@ -2435,8 +2395,8 @@ function renderWinDifferenceGraph() {
     if (!wrapper) return;
     wrapper.innerHTML = ''; // Clear previous graph
 
-    const team1Name = document.querySelector('#team1 .team-name').textContent;
-    const team2Name = document.querySelector('#team2 .team-name').textContent;
+    const team1Name = getTeamNameElement('team1').textContent;
+    const team2Name = getTeamNameElement('team2').textContent;
 
     const relevantHistory = fullHistory.filter(r =>
         (r.team1.name === team1Name && r.team2.name === team2Name) ||
