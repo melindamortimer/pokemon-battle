@@ -11,8 +11,331 @@ let currentPasteTeamId = null;
 let detectedPokemonNames = [];
 let isProcessingPaste = false;
 let goatWoatLimit = 3;
+let celebrationTestMode = false; // Set to true to test the 100 wins celebration
 
 const DEFAULT_PAGE_SIZE = 5;
+const CENTURY_WINS_MILESTONE = 100;
+
+// ==================== 100 Wins Celebration ====================
+// Cookie rain celebration for reaching 100 wins
+
+function createCelebrationOverlay() {
+    const existing = document.getElementById('century-celebration');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'century-celebration';
+    overlay.innerHTML = `
+        <div class="century-content">
+            <div class="century-fireworks"></div>
+            <div class="century-text">
+                <div class="century-emoji">🎉🏆🍪</div>
+                <h1 class="century-title">CENTURY!</h1>
+                <p class="century-subtitle"><span class="century-team-name"></span> has reached <strong>100 WINS!</strong></p>
+                <p class="century-flavor">It's ButterBoy time! 🍪</p>
+            </div>
+            <button class="century-close">Continue</button>
+        </div>
+        <div class="cookie-rain-container"></div>
+    `;
+
+    // Add styles
+    const style = document.createElement('style');
+    style.id = 'century-celebration-styles';
+    style.textContent = `
+        #century-celebration {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.5s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .century-content {
+            text-align: center;
+            z-index: 10001;
+            position: relative;
+        }
+        .century-emoji {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            animation: bounce 0.6s ease infinite alternate;
+        }
+        @keyframes bounce {
+            from { transform: translateY(0); }
+            to { transform: translateY(-20px); }
+        }
+        .century-title {
+            font-size: 5rem;
+            color: #ffd700;
+            text-shadow: 0 0 20px #ffd700, 0 0 40px #ff8c00, 0 0 60px #ff4500;
+            margin: 0;
+            animation: pulse 1s ease infinite;
+            font-family: 'Arial Black', sans-serif;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .century-subtitle {
+            font-size: 1.5rem;
+            color: #fff;
+            margin: 1rem 0;
+        }
+        .century-team-name {
+            color: #ffd700;
+            font-weight: bold;
+            font-size: 1.8rem;
+        }
+        .century-flavor {
+            font-size: 1.2rem;
+            color: #ccc;
+            margin: 0.5rem 0 2rem;
+        }
+        .century-close {
+            padding: 1rem 3rem;
+            font-size: 1.2rem;
+            background: linear-gradient(135deg, #ffd700, #ff8c00);
+            border: none;
+            border-radius: 50px;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .century-close:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
+        }
+        .cookie-rain-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 9999;
+        }
+        .falling-cookie {
+            position: absolute;
+            font-size: 2rem;
+            animation: cookieFall linear forwards;
+            z-index: 9999;
+        }
+        @keyframes cookieFall {
+            0% {
+                transform: translateY(-50px) rotate(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(110vh) rotate(720deg);
+                opacity: 0.8;
+            }
+        }
+        .century-fireworks {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        .firework {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: explode 1s ease-out forwards;
+        }
+        @keyframes explode {
+            0% {
+                transform: scale(0);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(1) translate(var(--tx), var(--ty));
+                opacity: 0;
+            }
+        }
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            animation: confettiFall linear forwards;
+        }
+        @keyframes confettiFall {
+            0% {
+                transform: translateY(0) rotate(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(100vh) rotate(720deg);
+                opacity: 0;
+            }
+        }
+    `;
+
+    if (!document.getElementById('century-celebration-styles')) {
+        document.head.appendChild(style);
+    }
+
+    document.body.appendChild(overlay);
+    return overlay;
+}
+
+function spawnCookies(container, count = 50) {
+    const cookieEmojis = ['🍪', '🍪', '🍪', '🎂', '🧁', '🍰'];
+
+    for (let i = 0; i < count; i++) {
+        setTimeout(() => {
+            const cookie = document.createElement('div');
+            cookie.className = 'falling-cookie';
+            cookie.textContent = cookieEmojis[Math.floor(Math.random() * cookieEmojis.length)];
+            cookie.style.left = Math.random() * 100 + '%';
+            cookie.style.fontSize = (1.5 + Math.random() * 2) + 'rem';
+            cookie.style.animationDuration = (3 + Math.random() * 4) + 's';
+            cookie.style.animationDelay = '0s';
+            container.appendChild(cookie);
+
+            setTimeout(() => cookie.remove(), 8000);
+        }, i * 100);
+    }
+}
+
+function spawnConfetti(container, count = 100) {
+    const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffd700', '#ff8c00'];
+
+    for (let i = 0; i < count; i++) {
+        setTimeout(() => {
+            const confetti = document.createElement('div');
+            confetti.className = 'confetti';
+            confetti.style.left = Math.random() * 100 + '%';
+            confetti.style.top = '-10px';
+            confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+            confetti.style.width = (5 + Math.random() * 10) + 'px';
+            confetti.style.height = (5 + Math.random() * 10) + 'px';
+            confetti.style.borderRadius = Math.random() > 0.5 ? '50%' : '0';
+            confetti.style.animationDuration = (2 + Math.random() * 3) + 's';
+            container.appendChild(confetti);
+
+            setTimeout(() => confetti.remove(), 6000);
+        }, i * 30);
+    }
+}
+
+function spawnFireworks(container) {
+    const colors = ['#ff0000', '#ffd700', '#00ff00', '#00bfff', '#ff00ff', '#ff8c00'];
+
+    for (let burst = 0; burst < 5; burst++) {
+        setTimeout(() => {
+            const x = (Math.random() - 0.5) * 300;
+            const y = (Math.random() - 0.5) * 200;
+
+            for (let i = 0; i < 20; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'firework';
+                particle.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                particle.style.left = `calc(50% + ${x}px)`;
+                particle.style.top = `calc(50% + ${y}px)`;
+
+                const angle = (i / 20) * Math.PI * 2;
+                const distance = 50 + Math.random() * 100;
+                particle.style.setProperty('--tx', Math.cos(angle) * distance + 'px');
+                particle.style.setProperty('--ty', Math.sin(angle) * distance + 'px');
+
+                container.appendChild(particle);
+                setTimeout(() => particle.remove(), 1000);
+            }
+        }, burst * 500);
+    }
+}
+
+function showCenturyCelebration(teamName) {
+    const overlay = createCelebrationOverlay();
+    const cookieContainer = overlay.querySelector('.cookie-rain-container');
+    const fireworksContainer = overlay.querySelector('.century-fireworks');
+
+    // Set the team name
+    overlay.querySelector('.century-team-name').textContent = teamName;
+
+    // Start the effects
+    spawnCookies(cookieContainer, 60);
+    spawnConfetti(cookieContainer, 80);
+    spawnFireworks(fireworksContainer);
+
+    // Continue spawning cookies periodically
+    const cookieInterval = setInterval(() => {
+        spawnCookies(cookieContainer, 20);
+    }, 3000);
+
+    // Close button
+    overlay.querySelector('.century-close').addEventListener('click', () => {
+        clearInterval(cookieInterval);
+        overlay.style.animation = 'fadeIn 0.3s ease reverse';
+        setTimeout(() => overlay.remove(), 300);
+    });
+
+    // Also close on clicking outside
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            clearInterval(cookieInterval);
+            overlay.style.animation = 'fadeIn 0.3s ease reverse';
+            setTimeout(() => overlay.remove(), 300);
+        }
+    });
+}
+
+// Check if any team just reached exactly 100 wins
+function checkForCenturyMilestone(previousTally) {
+    const currentTally = {};
+
+    fullHistory.forEach(result => {
+        if (result.winner === 'tie') return;
+        const winnerName = result[result.winner].name;
+        currentTally[winnerName] = (currentTally[winnerName] || 0) + 1;
+    });
+
+    // Find teams that just crossed 100
+    for (const [teamName, wins] of Object.entries(currentTally)) {
+        const previousWins = previousTally[teamName] || 0;
+        if (wins >= CENTURY_WINS_MILESTONE && previousWins < CENTURY_WINS_MILESTONE) {
+            // This team just hit 100!
+            setTimeout(() => showCenturyCelebration(teamName), 500);
+            return; // Only celebrate one at a time
+        }
+    }
+}
+
+// Get current win tally (for comparison before saving)
+function getCurrentWinTally() {
+    const tally = {};
+    fullHistory.forEach(result => {
+        if (result.winner === 'tie') return;
+        const winnerName = result[result.winner].name;
+        tally[winnerName] = (tally[winnerName] || 0) + 1;
+    });
+    return tally;
+}
+
+// Test function - call from browser console: testCenturyCelebration('Team Name')
+function testCenturyCelebration(teamName = 'Test Team') {
+    showCenturyCelebration(teamName);
+}
+
+// Enable test mode from console: enableCelebrationTestMode()
+function enableCelebrationTestMode() {
+    celebrationTestMode = true;
+    console.log('🍪 Celebration test mode enabled! The next saved battle will trigger the century celebration.');
+}
 
 // ==================== Constants ====================
 const STAT_MAPPINGS = {
@@ -1424,6 +1747,9 @@ async function saveCurrentBattle() {
     // Hide any existing streak achievement notification
     hideStreakAchievement();
 
+    // Capture current win tally BEFORE saving (for milestone detection)
+    const previousTally = getCurrentWinTally();
+
     const team1Data = getTeamData('team1');
     const team2Data = getTeamData('team2');
 
@@ -1459,6 +1785,16 @@ async function saveCurrentBattle() {
     localStorage.setItem('battleHistory', JSON.stringify(history));
 
     loadHistory(true); // Reload to show the new entry and check for streak breaks
+
+    // Check for century milestone (100 wins)
+    if (celebrationTestMode) {
+        // Test mode: trigger celebration for the winning team
+        celebrationTestMode = false;
+        const winnerName = winner !== 'tie' ? result[winner].name : team1Data.name;
+        setTimeout(() => showCenturyCelebration(winnerName), 500);
+    } else {
+        checkForCenturyMilestone(previousTally);
+    }
 
     getSaveButton().disabled = true;
 }
