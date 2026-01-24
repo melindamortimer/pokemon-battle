@@ -916,6 +916,16 @@ const achievements = [
         }
     },
     {
+        id: 'not-again-unown',
+        title: 'Not Again...',
+        emoji: '😩',
+        description: 'An Unown appeared. Of course it did.',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            return pokemon.some(p => p === 'unown' || p.startsWith('unown-'));
+        }
+    },
+    {
         id: 'slowpoke-mode',
         title: 'Slowpoke Mode',
         emoji: '🦥',
@@ -979,6 +989,7 @@ const ACHIEVEMENT_TRIGGER_MAP = {
     'kanto-starters': p => pokemonCategories.kantoStarters.includes(p.name.toLowerCase()),
     'fossil-revival': p => pokemonCategories.fossils.includes(p.name.toLowerCase()),
     'dynamic-duo': p => pokemonCategories.plusleminun.includes(p.name.toLowerCase()),
+    'not-again-unown': p => p.name.toLowerCase() === 'unown' || p.name.toLowerCase().startsWith('unown-'),
     'dragon-tamer': p => pokemonCategories.dragons.includes(p.name.toLowerCase()),
     'ditto-identity-crisis': p => p.name.toLowerCase() === 'ditto',
     'slowpoke-mode': p => pokemonCategories.slowpokes.includes(p.name.toLowerCase()),
@@ -1039,7 +1050,8 @@ function getAchievementCriteria(achievementId) {
         'slowpoke-mode': 'A Slowpoke family member is in your team.',
         'pretty-in-pink': 'Three or more pink Pokémon are in your team.',
         'mirror-match': 'The same Pokémon appears on both teams.',
-        'legendary-standoff': 'The same legendary Pokémon appears on both teams.'
+        'legendary-standoff': 'The same legendary Pokémon appears on both teams.',
+        'not-again-unown': 'An Unown is in your team.'
     };
     return criteriaMap[achievementId] || 'Special achievement unlocked.';
 }
