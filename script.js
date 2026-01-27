@@ -7,6 +7,7 @@ let historyPageSize = 5;
 let graphData = [];
 let allPokemonNames = [];
 let normalizedPokemonLookup = new Map();
+let pokemonIdLookup = new Map(); // Maps lowercase name -> actual PokeAPI ID
 let currentPasteTeamId = null;
 let detectedPokemonNames = [];
 let isProcessingPaste = false;
@@ -16,6 +17,7 @@ let tesseractWorker = null; // Pre-loaded OCR worker
 
 const DEFAULT_PAGE_SIZE = 5;
 const CENTURY_WINS_MILESTONE = 100;
+const PLACEHOLDER_SPRITE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'%3E%3Crect fill='%23e0e0e0' width='96' height='96' rx='8'/%3E%3Ctext x='48' y='56' text-anchor='middle' font-size='40' fill='%23999'%3E%3F%3C/text%3E%3C/svg%3E";
 
 // ==================== 100 Wins Celebration ====================
 // Cookie rain celebration for reaching 100 wins
@@ -1093,7 +1095,7 @@ function showAchievementPopup(allAchievements) {
     const achievementItems = allAchievements.map(a => {
         const sprites = (a.triggeringPokemon || []).map(p => {
             const spriteUrl = p.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${getPokemonIdByName(p.name)}.png`;
-            return `<img src="${spriteUrl}" alt="${p.name}" title="${p.name}" class="achievement-pokemon-sprite" onerror="this.style.display='none'">`;
+            return `<img src="${spriteUrl}" alt="${p.name}" title="${p.name}" class="achievement-pokemon-sprite" onerror="this.src='${PLACEHOLDER_SPRITE}';this.onerror=null">`;
         }).join('');
 
         return `
@@ -1124,8 +1126,7 @@ function showAchievementPopup(allAchievements) {
 
 // Helper to get Pokemon ID by name for sprite URLs
 function getPokemonIdByName(name) {
-    const index = allPokemonNames.findIndex(n => n.toLowerCase() === name.toLowerCase());
-    return index !== -1 ? index + 1 : 1;
+    return pokemonIdLookup.get(name.toLowerCase()) || 1;
 }
 
 // Detect achievements that involve both teams
@@ -1468,6 +1469,7 @@ function createPasteModal() {
 
 function openPasteModal(teamId) {
     createPasteModal();
+    clearAllSuggestions(); // Close any open search dropdowns
     currentPasteTeamId = teamId;
     detectedPokemonNames = [];
     isProcessingPaste = false;
@@ -1576,7 +1578,7 @@ async function handlePasteEvent(e) {
             const pokedexNum = getPokemonIdByName(name);
             const spriteUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokedexNum}.png`;
             item.innerHTML = `
-                <img src="${spriteUrl}" alt="${name}" class="paste-pokemon-sprite" onerror="this.style.display='none'" />
+                <img src="${spriteUrl}" alt="${name}" class="paste-pokemon-sprite" onerror="this.src='${PLACEHOLDER_SPRITE}';this.onerror=null" />
                 <span>${name}</span>
             `;
             pokemonListEl.appendChild(item);
@@ -1675,21 +1677,19 @@ function findClosestPokemonName(name) {
 function parsePokemonFromOCR(text) {
     const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
     const foundPokemon = [];
-    const seen = new Set();
 
     console.log('=== OCR DEBUG: Parsing lines ===');
     for (const line of lines) {
         const words = line.split(/\s+/);
 
-        // Try each word in the line to find a Pokemon match
+        // Find the first Pokemon match in this line
         let matchFound = null;
         for (const word of words) {
             const cleaned = word.toLowerCase();
-            if (cleaned && !seen.has(cleaned)) {
+            if (cleaned) {
                 const match = findClosestPokemonName(cleaned);
-                if (match && !seen.has(match.toLowerCase())) {
+                if (match) {
                     matchFound = match;
-                    seen.add(match.toLowerCase());
                     break;
                 }
             }
@@ -2449,12 +2449,25 @@ function scrollToBattle(matchId) {
 async function loadAllPokemonNames() {
     const res = await fetch("https://pokeapi.co/api/v2/pokemon?limit=1500");
     const data = await res.json();
-    allPokemonNames = data.results.map(p => capitalize(p.name));
+
+    // Filter out fan-made Pokemon (ID >= 10000) except Deoxys variants
+    const filtered = data.results.filter(p => {
+        const id = parseInt(p.url.split('/').filter(Boolean).pop());
+        const isDeoxys = p.name.startsWith('deoxys');
+        return id < 10000 || isDeoxys;
+    });
+
+    allPokemonNames = filtered.map(p => capitalize(p.name));
 
     // Build normalized lookup map for O(1) matching
     normalizedPokemonLookup.clear();
-    for (const name of allPokemonNames) {
-        normalizedPokemonLookup.set(name.toLowerCase(), name);
+    pokemonIdLookup.clear();
+    for (const p of filtered) {
+        const name = p.name.toLowerCase();
+        normalizedPokemonLookup.set(name, capitalize(p.name));
+        // Extract ID from URL (e.g., "https://pokeapi.co/api/v2/pokemon/10001/" -> 10001)
+        const id = parseInt(p.url.split('/').filter(Boolean).pop());
+        pokemonIdLookup.set(name, id);
     }
 }
 loadAllPokemonNames();
@@ -2655,10 +2668,20 @@ function createPageButton(pageNumber) {
     return pageButton;
 }
 
+function clearAllSuggestions() {
+    document.querySelectorAll('.suggestions').forEach(list => list.innerHTML = '');
+}
+
 function setupAutocomplete(input) {
     const wrapper = input.parentElement;
     const list = wrapper.querySelector(".suggestions");
     let currentIndex = -1;
+
+    // Close suggestions when clicking outside or losing focus
+    input.addEventListener("blur", () => {
+        // Delay to allow click on suggestion to register first
+        setTimeout(() => { list.innerHTML = ""; }, 150);
+    });
 
     input.addEventListener("input", () => {
         const val = input.value.toLowerCase();
@@ -2671,7 +2694,7 @@ function setupAutocomplete(input) {
             const li = document.createElement("li");
             const pokedexNum = getPokemonIdByName(name);
             const spriteUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokedexNum}.png`;
-            li.innerHTML = `<img src="${spriteUrl}" alt="${name}" class="suggestion-sprite"><span class="suggestion-name">${name}</span><span class="suggestion-number">#${pokedexNum}</span>`;
+            li.innerHTML = `<img src="${spriteUrl}" alt="${name}" class="suggestion-sprite" onerror="this.src='${PLACEHOLDER_SPRITE}';this.onerror=null"><span class="suggestion-name">${name}</span><span class="suggestion-number">#${pokedexNum}</span>`;
             li.dataset.name = name;
             li.addEventListener("click", () => {
                 input.value = name;
