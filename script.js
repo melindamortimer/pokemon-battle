@@ -12,6 +12,7 @@ let detectedPokemonNames = [];
 let isProcessingPaste = false;
 let goatWoatLimit = 3;
 let celebrationTestMode = false; // Set to true to test the 100 wins celebration
+let tesseractWorker = null; // Pre-loaded OCR worker
 
 const DEFAULT_PAGE_SIZE = 5;
 const CENTURY_WINS_MILESTONE = 100;
@@ -476,6 +477,7 @@ const POKEMON_NAME_VARIANTS = {
     'porygonz': 'porygon-z',
     'porygon_z': 'porygon-z',
     // Deoxys forms
+    'deoxys': 'deoxys-normal',
     'deoxys_normal': 'deoxys-normal',
     'deoxys_attack': 'deoxys-attack',
     'deoxys_defense': 'deoxys-defense',
@@ -484,6 +486,34 @@ const POKEMON_NAME_VARIANTS = {
     'deoxysattack': 'deoxys-attack',
     'deoxysdefense': 'deoxys-defense',
     'deoxysspeed': 'deoxys-speed',
+    // OCR error corrections (l/i confusion, missing letters)
+    'biastoise': 'blastoise',
+    'biastoie': 'blastoise',
+    'biastolse': 'blastoise',
+    'otad': 'lotad',
+    'iotad': 'lotad',
+    'iapras': 'lapras',
+    'edicott': 'ledian',
+    'edian': 'ledian',
+    'edyba': 'ledyba',
+    'udicolo': 'ludicolo',
+    'iudicolo': 'ludicolo',
+    'ombre': 'lombre',
+    'iombre': 'lombre',
+    'ucario': 'lucario',
+    'iucario': 'lucario',
+    'ugia': 'lugia',
+    'iugia': 'lugia',
+    'uxray': 'luxray',
+    'iuxray': 'luxray',
+    'uxio': 'luxio',
+    'iuxio': 'luxio',
+    'opunny': 'lopunny',
+    'iopunny': 'lopunny',
+    'anturn': 'lanturn',
+    'ianturn': 'lanturn',
+    'arvitar': 'larvitar',
+    'iarvitar': 'larvitar',
     // Unown variants (all map to base unown for PokeAPI)
     'unown_a': 'unown', 'unown_b': 'unown', 'unown_c': 'unown', 'unown_d': 'unown',
     'unown_e': 'unown', 'unown_f': 'unown', 'unown_g': 'unown', 'unown_h': 'unown',
@@ -1511,16 +1541,22 @@ async function handlePasteEvent(e) {
     pokemonListEl.innerHTML = '';
 
     try {
-        // Run OCR
-        const { data: { text } } = await Tesseract.recognize(imageBlob, 'eng', {
-            logger: m => {
-                if (m.status === 'recognizing text') {
-                    statusEl.textContent = `Reading... ${Math.round(m.progress * 100)}%`;
-                }
-            }
-        });
+        // Run OCR using pre-loaded worker (falls back to creating one if not ready)
+        let text;
+        if (tesseractWorker) {
+            const { data } = await tesseractWorker.recognize(imageBlob);
+            text = data.text;
+        } else {
+            statusEl.textContent = 'Initializing OCR...';
+            await initTesseractWorker();
+            const { data } = await tesseractWorker.recognize(imageBlob);
+            text = data.text;
+        }
 
         // Parse Pokemon names
+        console.log('=== OCR DEBUG: Raw text ===');
+        console.log(text);
+        console.log('=== End raw text ===');
         detectedPokemonNames = parsePokemonFromOCR(text);
 
         if (detectedPokemonNames.length === 0) {
@@ -1532,23 +1568,17 @@ async function handlePasteEvent(e) {
 
         statusEl.textContent = `Found ${detectedPokemonNames.length} Pokémon:`;
 
-        // Show detected Pokemon with sprites
+        // Show detected Pokemon with sprites (using direct URL, no API calls)
         pokemonListEl.innerHTML = '';
         for (const name of detectedPokemonNames) {
             const item = document.createElement('div');
             item.className = 'paste-pokemon-item';
-
-            // Fetch sprite
-            try {
-                const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
-                const data = await response.json();
-                item.innerHTML = `
-                    <img src="${data.sprites.front_default}" alt="${name}" class="paste-pokemon-sprite" />
-                    <span>${name}</span>
-                `;
-            } catch {
-                item.innerHTML = `<span>${name}</span>`;
-            }
+            const pokedexNum = getPokemonIdByName(name);
+            const spriteUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokedexNum}.png`;
+            item.innerHTML = `
+                <img src="${spriteUrl}" alt="${name}" class="paste-pokemon-sprite" onerror="this.style.display='none'" />
+                <span>${name}</span>
+            `;
             pokemonListEl.appendChild(item);
         }
 
@@ -1647,20 +1677,31 @@ function parsePokemonFromOCR(text) {
     const foundPokemon = [];
     const seen = new Set();
 
+    console.log('=== OCR DEBUG: Parsing lines ===');
     for (const line of lines) {
-        // Get the last word of each line (the Pokemon API name)
         const words = line.split(/\s+/);
-        const pokemonName = words[words.length - 1].toLowerCase();
 
-        if (pokemonName && !seen.has(pokemonName)) {
-            const match = findClosestPokemonName(pokemonName);
-            if (match) {
-                foundPokemon.push(match);
-                seen.add(pokemonName);
-                if (foundPokemon.length >= 6) break;
+        // Try each word in the line to find a Pokemon match
+        let matchFound = null;
+        for (const word of words) {
+            const cleaned = word.toLowerCase();
+            if (cleaned && !seen.has(cleaned)) {
+                const match = findClosestPokemonName(cleaned);
+                if (match && !seen.has(match.toLowerCase())) {
+                    matchFound = match;
+                    seen.add(match.toLowerCase());
+                    break;
+                }
             }
         }
+
+        console.log(`Line: "${line}" | Match: ${matchFound || 'NO MATCH'}`);
+        if (matchFound) {
+            foundPokemon.push(matchFound);
+            if (foundPokemon.length >= 6) break;
+        }
     }
+    console.log('=== OCR DEBUG: Found Pokemon ===', foundPokemon);
 
     return foundPokemon;
 }
@@ -2562,11 +2603,25 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
+// Initialize Tesseract worker with restricted character set for faster OCR
+async function initTesseractWorker() {
+    try {
+        tesseractWorker = await Tesseract.createWorker('eng');
+        await tesseractWorker.setParameters({
+            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz- ',
+        });
+        console.log('Tesseract worker initialized');
+    } catch (error) {
+        console.error('Failed to initialize Tesseract worker:', error);
+    }
+}
+
 // Load history after other scripts have set up the page
 window.addEventListener('load', () => {
     // Always hide the streak notification on page load
     hideStreakAchievement();
     loadHistory();
+    initTesseractWorker(); // Pre-load OCR engine
 });
 window.addEventListener('resize', () => renderWinDifferenceGraph()); // Re-render graph on resize
 
