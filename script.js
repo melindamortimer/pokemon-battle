@@ -14,6 +14,7 @@ let isProcessingPaste = false;
 let goatWoatLimit = 3;
 let celebrationTestMode = false; // Set to true to test the 100 wins celebration
 let tesseractWorker = null; // Pre-loaded OCR worker
+let ocrDebug = true; // Set to true to show OCR detection debug logs
 
 const DEFAULT_PAGE_SIZE = 5;
 const CENTURY_WINS_MILESTONE = 100;
@@ -478,8 +479,7 @@ const POKEMON_NAME_VARIANTS = {
     'porygon_2': 'porygon2',
     'porygonz': 'porygon-z',
     'porygon_z': 'porygon-z',
-    // Deoxys forms
-    'deoxys': 'deoxys-normal',
+    // Deoxys forms (base "deoxys" handled by base-form fallback in findClosestPokemonName)
     'deoxys_normal': 'deoxys-normal',
     'deoxys_attack': 'deoxys-attack',
     'deoxys_defense': 'deoxys-defense',
@@ -1543,16 +1543,27 @@ async function handlePasteEvent(e) {
     pokemonListEl.innerHTML = '';
 
     try {
+        // Preprocess image for better OCR accuracy
+        statusEl.textContent = 'Processing image...';
+        const processedBlob = await preprocessForOCR(imageBlob);
+
         // Run OCR using pre-loaded worker (falls back to creating one if not ready)
+        statusEl.textContent = 'Reading image...';
         let text;
         if (tesseractWorker) {
-            const { data } = await tesseractWorker.recognize(imageBlob);
+            const { data } = await tesseractWorker.recognize(processedBlob);
             text = data.text;
         } else {
             statusEl.textContent = 'Initializing OCR...';
             await initTesseractWorker();
-            const { data } = await tesseractWorker.recognize(imageBlob);
+            const { data } = await tesseractWorker.recognize(processedBlob);
             text = data.text;
+        }
+
+        if (ocrDebug) {
+            console.log('=== OCR DEBUG: Raw text from Tesseract ===');
+            console.log(text);
+            console.log('=== End raw text ===');
         }
 
         // Parse Pokemon names
@@ -1625,7 +1636,7 @@ async function applyDetectedPokemon() {
     }
 }
 
-// Simplified Pokemon name matching - exact matches only, no fuzzy matching
+// Pokemon name matching - exact matches first, then Levenshtein fuzzy fallback
 function findClosestPokemonName(name) {
     if (!name || typeof name !== 'string') return null;
 
@@ -1636,6 +1647,7 @@ function findClosestPokemonName(name) {
     // 1. Check variant mappings first (handles special cases like nidoran, mr-mime, etc.)
     if (POKEMON_NAME_VARIANTS[cleaned]) {
         const mapped = POKEMON_NAME_VARIANTS[cleaned];
+        if (ocrDebug) console.log(`    [match] variant map: "${cleaned}" -> "${mapped}"`);
         // Try Map first, then fall back to array search
         if (normalizedPokemonLookup.has(mapped)) {
             return normalizedPokemonLookup.get(mapped);
@@ -1646,6 +1658,7 @@ function findClosestPokemonName(name) {
 
     // 2. Direct lookup in normalized map (with array fallback)
     if (normalizedPokemonLookup.has(cleaned)) {
+        if (ocrDebug) console.log(`    [match] direct lookup: "${cleaned}"`);
         return normalizedPokemonLookup.get(cleaned);
     }
     let arrayMatch = allPokemonNames.find(n => n.toLowerCase() === cleaned);
@@ -1654,6 +1667,7 @@ function findClosestPokemonName(name) {
     // 3. Try with underscores replaced by hyphens
     const hyphenated = cleaned.replace(/_/g, '-');
     if (normalizedPokemonLookup.has(hyphenated)) {
+        if (ocrDebug) console.log(`    [match] hyphenated: "${cleaned}" -> "${hyphenated}"`);
         return normalizedPokemonLookup.get(hyphenated);
     }
     arrayMatch = allPokemonNames.find(n => n.toLowerCase() === hyphenated);
@@ -1663,11 +1677,44 @@ function findClosestPokemonName(name) {
     const stripped = cleaned.replace(/[-_]/g, '');
     for (const pokemonName of allPokemonNames) {
         if (pokemonName.toLowerCase().replace(/[-_]/g, '') === stripped) {
+            if (ocrDebug) console.log(`    [match] stripped: "${cleaned}" -> "${stripped}" = ${pokemonName}`);
             return pokemonName;
         }
     }
 
-    // No match found - don't guess with fuzzy matching
+    // 5. Base form match: "wormadam" -> "wormadam-plant", "giratina" -> "giratina-altered", etc.
+    for (const pokemonName of allPokemonNames) {
+        const pokeLower = pokemonName.toLowerCase();
+        if (pokeLower.startsWith(cleaned + '-')) {
+            if (ocrDebug) console.log(`    [match] base form: "${cleaned}" -> "${pokemonName}"`);
+            return pokemonName;
+        }
+    }
+
+    // 6. Fuzzy match using Levenshtein distance (catches OCR errors like "beedril" -> "beedrill")
+    if (cleaned.length >= 3) {
+        let bestMatch = null;
+        let bestDist = Infinity;
+        const maxDist = cleaned.length <= 5 ? 1 : 2; // Stricter for short names
+        for (const pokemonName of allPokemonNames) {
+            const pokeLower = pokemonName.toLowerCase();
+            // Skip if length difference alone exceeds max distance
+            if (Math.abs(pokeLower.length - cleaned.length) > maxDist) continue;
+            const d = levenshtein(cleaned, pokeLower);
+            if (d < bestDist) {
+                bestDist = d;
+                bestMatch = pokemonName;
+            }
+            if (d === 1) break; // Can't do better than distance 1
+        }
+        if (bestMatch && bestDist <= maxDist) {
+            if (ocrDebug) console.log(`    [match] fuzzy (distance ${bestDist}): "${cleaned}" -> "${bestMatch}"`);
+            return bestMatch;
+        }
+    }
+
+    // No match found
+    if (ocrDebug) console.log(`    [no match] "${name}" (cleaned: "${cleaned}")`);
     return null;
 }
 
@@ -1675,28 +1722,40 @@ function parsePokemonFromOCR(text) {
     const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
     const foundPokemon = [];
 
+    if (ocrDebug) console.log(`=== OCR DEBUG: Parsing ${lines.length} lines ===`);
+
     for (const line of lines) {
         const words = line.split(/\s+/);
 
-        // Find the first Pokemon match in this line
+        if (ocrDebug) console.log(`  Line: "${line}" | Words: [${words.map(w => `"${w}"`).join(', ')}]`);
+
+        // Try multi-word combinations first (e.g., "deoxys defense" -> "deoxys-defense")
         let matchFound = null;
-        for (const word of words) {
-            const cleaned = word.toLowerCase();
-            if (cleaned) {
-                const match = findClosestPokemonName(cleaned);
-                if (match) {
-                    matchFound = match;
-                    break;
+        for (let i = 0; i < words.length && !matchFound; i++) {
+            // Try 3-word, 2-word, then 1-word combos starting at position i
+            for (let len = Math.min(3, words.length - i); len >= 1; len--) {
+                const combined = words.slice(i, i + len).join('-').toLowerCase();
+                if (combined) {
+                    const match = findClosestPokemonName(combined);
+                    if (match) {
+                        if (ocrDebug && len > 1) console.log(`    [multi-word] "${words.slice(i, i + len).join(' ')}" -> "${combined}"`);
+                        matchFound = match;
+                        break;
+                    }
                 }
             }
         }
 
         if (matchFound) {
+            if (ocrDebug) console.log(`  -> MATCHED: ${matchFound}`);
             foundPokemon.push(matchFound);
             if (foundPokemon.length >= 6) break;
+        } else {
+            if (ocrDebug) console.log(`  -> NO MATCH on this line`);
         }
     }
 
+    if (ocrDebug) console.log(`=== OCR DEBUG: Found ${foundPokemon.length} Pokemon: [${foundPokemon.join(', ')}] ===`);
     return foundPokemon;
 }
 
@@ -2441,14 +2500,14 @@ function scrollToBattle(matchId) {
 }
 
 async function loadAllPokemonNames() {
-    const res = await fetch("https://pokeapi.co/api/v2/pokemon?limit=1500");
+    const res = await fetch("https://pokeapi.co/api/v2/pokemon?limit=2000");
     const data = await res.json();
 
-    // Filter out fan-made Pokemon (ID >= 10000) except Deoxys variants
+    // Include base Pokemon (ID < 10000) and official alternate forms (10000-10300 range)
+    // IDs 10001-10300 are real alternate forms (megas, form variants like shaymin-sky, rotom-wash, etc.)
     const filtered = data.results.filter(p => {
         const id = parseInt(p.url.split('/').filter(Boolean).pop());
-        const isDeoxys = p.name.startsWith('deoxys');
-        return id < 10000 || isDeoxys;
+        return id < 10300;
     });
 
     allPokemonNames = filtered.map(p => capitalize(p.name));
@@ -2616,11 +2675,66 @@ async function initTesseractWorker() {
         tesseractWorker = await Tesseract.createWorker('eng');
         await tesseractWorker.setParameters({
             tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz- ',
+            tessedit_pageseg_mode: '6', // Assume uniform block of text
         });
         console.log('Tesseract worker initialized');
     } catch (error) {
         console.error('Failed to initialize Tesseract worker:', error);
     }
+}
+
+// Preprocess image for better OCR accuracy: upscale, grayscale, binarize
+function preprocessForOCR(imageBlob) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            // Upscale 2x for better OCR on small text
+            const scale = 2;
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+
+            // Draw upscaled with grayscale + high contrast
+            ctx.filter = 'grayscale(100%) contrast(200%)';
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            ctx.filter = 'none';
+
+            // Manual binarization for cleaner text
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            const threshold = 128;
+            for (let i = 0; i < data.length; i += 4) {
+                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                const val = gray >= threshold ? 255 : 0;
+                data[i] = data[i + 1] = data[i + 2] = val;
+            }
+            ctx.putImageData(imageData, 0, 0);
+
+            canvas.toBlob(resolve, 'image/png');
+            URL.revokeObjectURL(img.src);
+        };
+        img.src = URL.createObjectURL(imageBlob);
+    });
+}
+
+// Levenshtein distance for fuzzy matching OCR errors against known Pokemon names
+function levenshtein(a, b) {
+    const m = a.length, n = b.length;
+    const dp = Array.from({ length: m + 1 }, (_, i) => i);
+    for (let j = 1; j <= n; j++) {
+        let prev = dp[0];
+        dp[0] = j;
+        for (let i = 1; i <= m; i++) {
+            const temp = dp[i];
+            dp[i] = a[i - 1] === b[j - 1]
+                ? prev
+                : 1 + Math.min(prev, dp[i], dp[i - 1]);
+            prev = temp;
+        }
+    }
+    return dp[m];
 }
 
 // Load history after other scripts have set up the page
