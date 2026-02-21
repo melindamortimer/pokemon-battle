@@ -936,6 +936,14 @@ const achievements = [
             return count >= 3;
         }
     },
+    // Battle result achievements
+    {
+        id: 'stalemate',
+        title: 'Stalemate',
+        emoji: '🤝',
+        description: 'The battle ended in a tie!',
+        check: (team, isWinner, isTie) => isTie
+    },
     // Fun achievements
     {
         id: 'ditto-identity-crisis',
@@ -981,11 +989,11 @@ const achievements = [
 ];
 
 // Detect achievements for a team
-function detectAchievements(teamData, isWinner) {
+function detectAchievements(teamData, isWinner, isTie = false) {
     const earned = [];
 
     for (const achievement of achievements) {
-        if (achievement.check(teamData, isWinner)) {
+        if (achievement.check(teamData, isWinner, isTie)) {
             const triggeringPokemon = findTriggeringPokemon(achievement.id, teamData);
             earned.push({
                 id: achievement.id,
@@ -1083,7 +1091,14 @@ function getAchievementCriteria(achievementId) {
         'pretty-in-pink': 'Three or more pink Pokémon are in your team.',
         'mirror-match': 'The same Pokémon appears on both teams.',
         'legendary-standoff': 'The same legendary Pokémon appears on both teams.',
-        'not-again-unown': 'An Unown is in your team.'
+        'not-again-unown': 'An Unown is in your team.',
+        'stalemate': 'Both teams have the same total score.',
+        'goat-contender': 'Your team made the GOAT top 10!',
+        'goat-elite': 'Your team made the GOAT top 3!',
+        'goat-champion': 'Your team is the #1 GOAT!',
+        'woat-contender': 'Your team made the WOAT bottom 10...',
+        'woat-elite': 'Your team made the WOAT bottom 3...',
+        'woat-champion': 'Your team is the #1 WOAT...'
     };
     return criteriaMap[achievementId] || 'Special achievement unlocked.';
 }
@@ -1165,6 +1180,90 @@ function detectCrossTeamAchievements(team1Data, team2Data) {
     return earned;
 }
 
+// Detect GOAT/WOAT ranking achievements for both teams
+function detectGoatWoatAchievements(team1Data, team2Data, existingHistory) {
+    const result = { team1: [], team2: [] };
+
+    // Build all historical team scores including the new battle
+    const allScores = [];
+    existingHistory.forEach(h => {
+        allScores.push(parseInt(h.team1.score));
+        allScores.push(parseInt(h.team2.score));
+    });
+    const team1Score = parseInt(team1Data.score);
+    const team2Score = parseInt(team2Data.score);
+    allScores.push(team1Score, team2Score);
+
+    // Sort descending for GOAT ranking
+    const sortedDesc = [...allScores].sort((a, b) => b - a);
+    // Sort ascending for WOAT ranking
+    const sortedAsc = [...allScores].sort((a, b) => a - b);
+
+    // Need enough history for rankings to be meaningful (at least 10 teams = 5 battles)
+    if (allScores.length < 10) return result;
+
+    for (const [teamId, teamData, score] of [['team1', team1Data, team1Score], ['team2', team2Data, team2Score]]) {
+        // GOAT ranking (where does this score sit among highest?)
+        const goatRank = sortedDesc.indexOf(score) + 1;
+        // WOAT ranking (where does this score sit among lowest?)
+        const woatRank = sortedAsc.indexOf(score) + 1;
+
+        if (goatRank === 1) {
+            result[teamId].push({
+                id: 'goat-champion',
+                title: 'GOAT Champion!',
+                emoji: '🐐👑',
+                description: `${teamData.name} is the #1 Greatest of All Time!`,
+                triggeringPokemon: teamData.pokemon
+            });
+        } else if (goatRank <= 3) {
+            result[teamId].push({
+                id: 'goat-elite',
+                title: 'GOAT Elite',
+                emoji: '🐐🏅',
+                description: `${teamData.name} ranked #${goatRank} all time!`,
+                triggeringPokemon: teamData.pokemon
+            });
+        } else if (goatRank <= 10) {
+            result[teamId].push({
+                id: 'goat-contender',
+                title: 'GOAT Contender',
+                emoji: '🐐',
+                description: `${teamData.name} cracked the GOAT top 10!`,
+                triggeringPokemon: teamData.pokemon
+            });
+        }
+
+        if (woatRank === 1) {
+            result[teamId].push({
+                id: 'woat-champion',
+                title: 'WOAT Champion...',
+                emoji: '🗑️👑',
+                description: `${teamData.name} is the #1 Worst of All Time...`,
+                triggeringPokemon: teamData.pokemon
+            });
+        } else if (woatRank <= 3) {
+            result[teamId].push({
+                id: 'woat-elite',
+                title: 'WOAT Elite',
+                emoji: '🗑️🏅',
+                description: `${teamData.name} ranked bottom ${woatRank} all time...`,
+                triggeringPokemon: teamData.pokemon
+            });
+        } else if (woatRank <= 10) {
+            result[teamId].push({
+                id: 'woat-contender',
+                title: 'WOAT Contender',
+                emoji: '🗑️',
+                description: `${teamData.name} sank to the WOAT bottom 10...`,
+                triggeringPokemon: teamData.pokemon
+            });
+        }
+    }
+
+    return result;
+}
+
 // Filter out lower-tier achievements when higher-tier ones are present
 function filterTieredAchievements(achievements) {
     const ids = achievements.map(a => a.id);
@@ -1205,6 +1304,18 @@ function filterTieredAchievements(achievements) {
         if (a.id === 'i-choose-you' && hasPikaFamily) {
             return false;
         }
+
+        // GOAT tiers: champion > elite > contender
+        const hasGoatChampion = ids.includes('goat-champion');
+        const hasGoatElite = ids.includes('goat-elite');
+        if (a.id === 'goat-contender' && (hasGoatElite || hasGoatChampion)) return false;
+        if (a.id === 'goat-elite' && hasGoatChampion) return false;
+
+        // WOAT tiers: champion > elite > contender
+        const hasWoatChampion = ids.includes('woat-champion');
+        const hasWoatElite = ids.includes('woat-elite');
+        if (a.id === 'woat-contender' && (hasWoatElite || hasWoatChampion)) return false;
+        if (a.id === 'woat-elite' && hasWoatChampion) return false;
 
         return true;
     });
@@ -1807,8 +1918,9 @@ async function determineWinner() {
     // Detect and display achievements
     const team1Data = getTeamData('team1');
     const team2Data = getTeamData('team2');
-    currentBattleAchievements.team1 = detectAchievements(team1Data, team1IsWinner);
-    currentBattleAchievements.team2 = detectAchievements(team2Data, team2IsWinner);
+    const isTie = !team1IsWinner && !team2IsWinner;
+    currentBattleAchievements.team1 = detectAchievements(team1Data, team1IsWinner, isTie);
+    currentBattleAchievements.team2 = detectAchievements(team2Data, team2IsWinner, isTie);
 
     const crossTeamAchievements = detectCrossTeamAchievements(team1Data, team2Data);
     const allAchievements = [
@@ -1870,6 +1982,10 @@ async function saveCurrentBattle() {
     // Detect cross-team achievements for saving
     const crossTeamAchievements = detectCrossTeamAchievements(team1Data, team2Data);
 
+    // Detect GOAT/WOAT achievements (needs full history including this battle)
+    const historyBeforeSave = JSON.parse(localStorage.getItem('battleHistory')) || [];
+    const goatWoatAchievements = detectGoatWoatAchievements(team1Data, team2Data, historyBeforeSave);
+
     const result = {
         id: Date.now(),
         team1: team1Data,
@@ -1877,16 +1993,25 @@ async function saveCurrentBattle() {
         winner: winner,
         date: new Date().toISOString(),
         achievements: {
-            team1: currentBattleAchievements.team1,
-            team2: currentBattleAchievements.team2,
+            team1: [...currentBattleAchievements.team1, ...goatWoatAchievements.team1],
+            team2: [...currentBattleAchievements.team2, ...goatWoatAchievements.team2],
             crossTeam: crossTeamAchievements
         }
     };
 
+    // Show GOAT/WOAT achievements if any were earned
+    const allGoatWoat = [...goatWoatAchievements.team1, ...goatWoatAchievements.team2];
+    if (allGoatWoat.length > 0) {
+        const uniqueGoatWoat = filterTieredAchievements(deduplicateAchievements(allGoatWoat));
+        if (uniqueGoatWoat.length > 0) {
+            setTimeout(() => showAchievementPopup(uniqueGoatWoat), 600);
+        }
+    }
+
     // Reset achievements for next battle
     currentBattleAchievements = { team1: [], team2: [] };
 
-    const history = JSON.parse(localStorage.getItem('battleHistory')) || [];
+    const history = historyBeforeSave;
     history.push(result);
     localStorage.setItem('battleHistory', JSON.stringify(history));
 
