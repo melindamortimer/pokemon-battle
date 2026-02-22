@@ -15,6 +15,8 @@ let goatWoatLimit = 3;
 let celebrationTestMode = false; // Set to true to test the 100 wins celebration
 let tesseractWorker = null; // Pre-loaded OCR worker
 let ocrDebug = true; // Set to true to show OCR detection debug logs
+let arcadeModeActive = false; // Whether arcade mode is currently toggled on
+let arcadeModeUnlocked = false; // Whether arcade mode has been unlocked (100 wins)
 
 const DEFAULT_PAGE_SIZE = 5;
 const CENTURY_WINS_MILESTONE = 100;
@@ -312,7 +314,8 @@ function checkForCenturyMilestone(previousTally) {
     for (const [teamName, wins] of Object.entries(currentTally)) {
         const previousWins = previousTally[teamName] || 0;
         if (wins >= CENTURY_WINS_MILESTONE && previousWins < CENTURY_WINS_MILESTONE) {
-            // This team just hit 100!
+            // This team just hit 100! Unlock arcade mode
+            unlockArcadeMode();
             setTimeout(() => showCenturyCelebration(teamName), 500);
             return; // Only celebrate one at a time
         }
@@ -432,6 +435,12 @@ function resetBattleState() {
         saveBtn.style.display = 'none';
     }
     isBattleConcluded = false;
+    currentArcadeScores = null;
+
+    // Remove arcade bonus displays
+    document.querySelectorAll('.arcade-individual-bonuses').forEach(el => el.remove());
+    document.querySelectorAll('.arcade-team-summary').forEach(el => el.remove());
+    document.querySelectorAll('.arcade-effect-overlay').forEach(el => el.remove());
 }
 
 // Comprehensive Pokemon name variants map
@@ -659,6 +668,697 @@ const pokemonCategories = {
         'glalie', 'froslass', 'walrein', 'huntail', 'gorebyss', 'salamence', 'metagross'
     ]
 };
+
+// ==================== Arcade Mode Data ====================
+
+// Type effectiveness chart: TYPE_CHART[attacking][defending] = multiplier
+// Only non-1.0x entries stored. 2 = super effective, 0.5 = not very effective, 0 = immune
+const TYPE_CHART = {
+    normal:   { rock: 0.5, ghost: 0, steel: 0.5 },
+    fire:     { fire: 0.5, water: 0.5, grass: 2, ice: 2, bug: 2, rock: 0.5, dragon: 0.5, steel: 2 },
+    water:    { fire: 2, water: 0.5, grass: 0.5, ground: 2, rock: 2, dragon: 0.5 },
+    electric: { water: 2, electric: 0.5, grass: 0.5, ground: 0, flying: 2, dragon: 0.5 },
+    grass:    { fire: 0.5, water: 2, grass: 0.5, poison: 0.5, ground: 2, flying: 0.5, bug: 0.5, rock: 2, dragon: 0.5, steel: 0.5 },
+    ice:      { fire: 0.5, water: 0.5, grass: 2, ice: 0.5, ground: 2, flying: 2, dragon: 2, steel: 0.5 },
+    fighting: { normal: 2, ice: 2, poison: 0.5, flying: 0.5, psychic: 0.5, bug: 0.5, rock: 2, ghost: 0, dark: 2, steel: 2, fairy: 0.5 },
+    poison:   { grass: 2, poison: 0.5, ground: 0.5, rock: 0.5, ghost: 0.5, steel: 0, fairy: 2 },
+    ground:   { fire: 2, electric: 2, grass: 0.5, poison: 2, flying: 0, bug: 0.5, rock: 2, steel: 2 },
+    flying:   { electric: 0.5, grass: 2, fighting: 2, bug: 2, rock: 0.5, steel: 0.5 },
+    psychic:  { fighting: 2, poison: 2, psychic: 0.5, dark: 0, steel: 0.5 },
+    bug:      { fire: 0.5, grass: 2, fighting: 0.5, poison: 0.5, flying: 0.5, psychic: 2, ghost: 0.5, dark: 2, steel: 0.5, fairy: 0.5 },
+    rock:     { fire: 2, ice: 2, fighting: 0.5, ground: 0.5, flying: 2, bug: 2, steel: 0.5 },
+    ghost:    { normal: 0, psychic: 2, ghost: 2, dark: 0.5 },
+    dragon:   { dragon: 2, steel: 0.5, fairy: 0 },
+    dark:     { fighting: 0.5, psychic: 2, ghost: 2, dark: 0.5, fairy: 0.5 },
+    steel:    { fire: 0.5, water: 0.5, electric: 0.5, ice: 2, rock: 2, steel: 0.5, fairy: 2 },
+    fairy:    { fire: 0.5, fighting: 2, poison: 0.5, dragon: 2, dark: 2, steel: 0.5 }
+};
+
+// Get type effectiveness multiplier (defaults to 1.0 for neutral)
+function getTypeEffectiveness(attackType, defendType) {
+    return (TYPE_CHART[attackType] && TYPE_CHART[attackType][defendType]) || 1;
+}
+
+// Check if attackType is super-effective against a Pokemon with given types
+function isSuperEffective(attackType, defenderTypes) {
+    return defenderTypes.some(dt => getTypeEffectiveness(attackType, dt) >= 2);
+}
+
+// Check if a Pokemon with attackTypes resists defenderTypes
+function resistsType(defenderTypes, attackType) {
+    return defenderTypes.some(dt => getTypeEffectiveness(attackType, dt) <= 0.5);
+}
+
+// All types a given type is super-effective against
+function getSuperEffectiveTargets(attackType) {
+    const targets = [];
+    const chart = TYPE_CHART[attackType] || {};
+    for (const [type, mult] of Object.entries(chart)) {
+        if (mult >= 2) targets.push(type);
+    }
+    return targets;
+}
+
+// All 18 Pokemon types
+const ALL_TYPES = ['normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison',
+    'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy'];
+
+// Type -> stat theme mapping for STAB Specialist bonus
+const TYPE_STAT_THEMES = {
+    fire: 'ATK', water: 'SP. ATK', electric: 'SP. ATK', grass: 'SP. ATK',
+    ice: 'SP. ATK', fighting: 'ATK', poison: 'ATK', ground: 'ATK',
+    flying: 'SPE', psychic: 'SP. ATK', bug: 'ATK', rock: 'DEF',
+    ghost: 'SP. ATK', dragon: 'ATK', dark: 'ATK', steel: 'DEF',
+    fairy: 'SP. DEF', normal: 'HP'
+};
+
+// Generation ranges by national Pokedex ID
+const GENERATION_RANGES = [
+    { gen: 1, min: 1, max: 151 },
+    { gen: 2, min: 152, max: 251 },
+    { gen: 3, min: 252, max: 386 },
+    { gen: 4, min: 387, max: 493 },
+    { gen: 5, min: 494, max: 649 },
+    { gen: 6, min: 650, max: 721 },
+    { gen: 7, min: 722, max: 809 },
+    { gen: 8, min: 810, max: 905 },
+    { gen: 9, min: 906, max: 1025 }
+];
+
+function getGeneration(pokemonId) {
+    for (const range of GENERATION_RANGES) {
+        if (pokemonId >= range.min && pokemonId <= range.max) return range.gen;
+    }
+    return 0;
+}
+
+// Baby Pokemon (first-stage, pre-evolution forms)
+const BABY_POKEMON = [
+    'pichu', 'cleffa', 'igglybuff', 'togepi', 'tyrogue', 'smoochum', 'elekid', 'magby',
+    'azurill', 'wynaut', 'budew', 'chingling', 'bonsly', 'mime-jr', 'happiny', 'munchlax',
+    'riolu', 'mantyke', 'toxel'
+];
+
+// Evolution chains: arrays of [stage1, stage2, stage3?]
+// Covers Gen 1-5 comprehensively + notable later chains
+const EVOLUTION_CHAIN_LIST = [
+    // Gen 1 - 3-stage
+    ['bulbasaur', 'ivysaur', 'venusaur'], ['charmander', 'charmeleon', 'charizard'],
+    ['squirtle', 'wartortle', 'blastoise'], ['caterpie', 'metapod', 'butterfree'],
+    ['weedle', 'kakuna', 'beedrill'], ['pidgey', 'pidgeotto', 'pidgeot'],
+    ['nidoran-f', 'nidorina', 'nidoqueen'], ['nidoran-m', 'nidorino', 'nidoking'],
+    ['zubat', 'golbat', 'crobat'], ['oddish', 'gloom', 'vileplume'],
+    ['poliwag', 'poliwhirl', 'poliwrath'], ['abra', 'kadabra', 'alakazam'],
+    ['machop', 'machoke', 'machamp'], ['bellsprout', 'weepinbell', 'victreebel'],
+    ['geodude', 'graveler', 'golem'], ['magnemite', 'magneton', 'magnezone'],
+    ['gastly', 'haunter', 'gengar'], ['dratini', 'dragonair', 'dragonite'],
+    // Gen 1 - 2-stage
+    ['rattata', 'raticate'], ['ekans', 'arbok'], ['pikachu', 'raichu'],
+    ['sandshrew', 'sandslash'], ['vulpix', 'ninetales'], ['paras', 'parasect'],
+    ['venonat', 'venomoth'], ['diglett', 'dugtrio'], ['meowth', 'persian'],
+    ['psyduck', 'golduck'], ['mankey', 'primeape'], ['growlithe', 'arcanine'],
+    ['tentacool', 'tentacruel'], ['ponyta', 'rapidash'], ['slowpoke', 'slowbro'],
+    ['doduo', 'dodrio'], ['seel', 'dewgong'], ['grimer', 'muk'],
+    ['shellder', 'cloyster'], ['drowzee', 'hypno'], ['krabby', 'kingler'],
+    ['voltorb', 'electrode'], ['exeggcute', 'exeggutor'], ['cubone', 'marowak'],
+    ['koffing', 'weezing'], ['rhyhorn', 'rhydon'], ['horsea', 'seadra'],
+    ['goldeen', 'seaking'], ['staryu', 'starmie'], ['magikarp', 'gyarados'],
+    ['omanyte', 'omastar'], ['kabuto', 'kabutops'],
+    // Gen 2 - 3-stage
+    ['chikorita', 'bayleef', 'meganium'], ['cyndaquil', 'quilava', 'typhlosion'],
+    ['totodile', 'croconaw', 'feraligatr'], ['mareep', 'flaaffy', 'ampharos'],
+    ['hoppip', 'skiploom', 'jumpluff'], ['swinub', 'piloswine', 'mamoswine'],
+    ['larvitar', 'pupitar', 'tyranitar'],
+    // Gen 2 - 2-stage
+    ['sentret', 'furret'], ['hoothoot', 'noctowl'], ['ledyba', 'ledian'],
+    ['spinarak', 'ariados'], ['chinchou', 'lanturn'], ['natu', 'xatu'],
+    ['marill', 'azumarill'], ['houndour', 'houndoom'], ['phanpy', 'donphan'],
+    ['teddiursa', 'ursaring'], ['slugma', 'magcargo'], ['remoraid', 'octillery'],
+    ['sneasel', 'weavile'], ['sunkern', 'sunflora'], ['wooper', 'quagsire'],
+    // Gen 3 - 3-stage
+    ['treecko', 'grovyle', 'sceptile'], ['torchic', 'combusken', 'blaziken'],
+    ['mudkip', 'marshtomp', 'swampert'], ['lotad', 'lombre', 'ludicolo'],
+    ['seedot', 'nuzleaf', 'shiftry'], ['ralts', 'kirlia', 'gardevoir'],
+    ['slakoth', 'vigoroth', 'slaking'], ['whismur', 'loudred', 'exploud'],
+    ['aron', 'lairon', 'aggron'], ['trapinch', 'vibrava', 'flygon'],
+    ['spheal', 'sealeo', 'walrein'], ['bagon', 'shelgon', 'salamence'],
+    ['beldum', 'metang', 'metagross'],
+    // Gen 3 - 2-stage
+    ['poochyena', 'mightyena'], ['zigzagoon', 'linoone'], ['wingull', 'pelipper'],
+    ['shroomish', 'breloom'], ['makuhita', 'hariyama'], ['skitty', 'delcatty'],
+    ['electrike', 'manectric'], ['gulpin', 'swalot'], ['carvanha', 'sharpedo'],
+    ['wailmer', 'wailord'], ['numel', 'camerupt'], ['spoink', 'grumpig'],
+    ['barboach', 'whiscash'], ['corphish', 'crawdaunt'], ['baltoy', 'claydol'],
+    ['shuppet', 'banette'], ['duskull', 'dusclops'],
+    // Gen 4 - 3-stage
+    ['turtwig', 'grotle', 'torterra'], ['chimchar', 'monferno', 'infernape'],
+    ['piplup', 'prinplup', 'empoleon'], ['starly', 'staravia', 'staraptor'],
+    ['shinx', 'luxio', 'luxray'], ['gible', 'gabite', 'garchomp'],
+    // Gen 4 - 2-stage
+    ['buizel', 'floatzel'], ['drifloon', 'drifblim'], ['buneary', 'lopunny'],
+    ['skorupi', 'drapion'], ['croagunk', 'toxicroak'], ['finneon', 'lumineon'],
+    // Gen 5 - 3-stage
+    ['snivy', 'servine', 'serperior'], ['tepig', 'pignite', 'emboar'],
+    ['oshawott', 'dewott', 'samurott'], ['lillipup', 'herdier', 'stoutland'],
+    ['roggenrola', 'boldore', 'gigalith'], ['timburr', 'gurdurr', 'conkeldurr'],
+    ['sewaddle', 'swadloon', 'leavanny'], ['venipede', 'whirlipede', 'scolipede'],
+    ['sandile', 'krokorok', 'krookodile'], ['gothita', 'gothorita', 'gothitelle'],
+    ['solosis', 'duosion', 'reuniclus'], ['vanillite', 'vanillish', 'vanilluxe'],
+    ['klink', 'klang', 'klinklang'], ['litwick', 'lampent', 'chandelure'],
+    ['axew', 'fraxure', 'haxorus'], ['deino', 'zweilous', 'hydreigon'],
+    // Gen 5 - 2-stage
+    ['patrat', 'watchog'], ['purrloin', 'liepard'], ['munna', 'musharna'],
+    ['pidove', 'tranquill'], ['woobat', 'swoobat'], ['drilbur', 'excadrill'],
+    ['tympole', 'palpitoad'], ['throh'], ['sawk'], ['cottonee', 'whimsicott'],
+    ['petilil', 'lilligant'], ['darumaka', 'darmanitan'], ['dwebble', 'crustle'],
+    ['yamask', 'cofagrigus'], ['zorua', 'zoroark'], ['minccino', 'cinccino'],
+    ['joltik', 'galvantula'], ['ferroseed', 'ferrothorn'], ['elgyem', 'beheeyem'],
+    ['cubchoo', 'beartic'], ['mienfoo', 'mienshao'], ['pawniard', 'bisharp'],
+    ['rufflet', 'braviary'], ['vullaby', 'mandibuzz'], ['larvesta', 'volcarona']
+];
+
+// Build evolution lookup: name -> { stage, chain, chainLength }
+const EVOLUTION_LOOKUP = {};
+EVOLUTION_CHAIN_LIST.forEach(chain => {
+    if (chain.length < 2) return; // Skip single-Pokemon entries
+    chain.forEach((name, index) => {
+        EVOLUTION_LOOKUP[name] = {
+            stage: index + 1,
+            chain: chain,
+            chainLength: chain.length
+        };
+    });
+});
+
+// Rival pairs for cross-team and same-team bonuses
+const RIVAL_PAIRS = [
+    { pair: ['zangoose', 'seviper'], bonus: 1.15 },
+    { pair: ['heatmor', 'durant'], bonus: 1.15 },
+    { pair: ['pinsir', 'heracross'], bonus: 1.10 },
+    { pair: ['throh', 'sawk'], bonus: 1.10 },
+    { pair: ['hitmonlee', 'hitmonchan'], bonus: 1.10 },
+    { pair: ['groudon', 'kyogre'], bonus: 1.15 },
+    { pair: ['dialga', 'palkia'], bonus: 1.15 },
+    { pair: ['reshiram', 'zekrom'], bonus: 1.15 },
+    { pair: ['lugia', 'ho-oh'], bonus: 1.10 },
+    { pair: ['latias', 'latios'], bonus: 1.10 }
+];
+
+// ==================== Arcade Multiplier Calculations ====================
+
+// Helper: get a Pokemon's stat value by short name (HP, ATK, DEF, SP. ATK, SP. DEF, SPE)
+function getStatValue(pokemon, statName) {
+    const stat = pokemon.stats.find(s => s.name === statName);
+    return stat ? stat.value : 0;
+}
+
+// Helper: get a Pokemon's highest stat
+function getHighestStat(pokemon) {
+    let highest = { name: '', value: 0 };
+    pokemon.stats.forEach(s => {
+        if (s.value > highest.value) highest = { name: s.name, value: s.value };
+    });
+    return highest;
+}
+
+// --- Layer 1: Individual Pokemon Multipliers ---
+function calculateIndividualBonuses(pokemon, teamSoFar) {
+    const bonuses = [];
+    const name = pokemon.name.toLowerCase();
+    const types = pokemon.types || [];
+    const total = pokemon.score;
+
+    // STAB Specialist: highest stat aligns with type theme
+    const highestStat = getHighestStat(pokemon);
+    const hasStab = types.some(type => TYPE_STAT_THEMES[type] === highestStat.name);
+    if (hasStab) {
+        bonuses.push({ name: 'STAB Specialist', multiplier: 1.10, description: `${highestStat.name} matches type theme` });
+    }
+
+    // Underdog Spirit: base stat total < 300
+    if (total < 300) {
+        bonuses.push({ name: 'Underdog Spirit', multiplier: 1.20, description: 'Base stats < 300' });
+    }
+
+    // Stat Spike: any single stat > 150
+    if (pokemon.stats.some(s => s.value > 150)) {
+        bonuses.push({ name: 'Stat Spike', multiplier: 1.10, description: 'Has a stat > 150' });
+    }
+
+    // Evolved Form: final evolution of a 3-stage line
+    const evoData = EVOLUTION_LOOKUP[name];
+    if (evoData && evoData.chainLength === 3 && evoData.stage === 3) {
+        bonuses.push({ name: 'Evolved Form', multiplier: 1.05, description: 'Final 3-stage evolution' });
+    }
+
+    // Baby Pokemon
+    if (BABY_POKEMON.includes(name)) {
+        bonuses.push({ name: 'Baby Pokemon', multiplier: 1.15, description: 'Baby/pre-evolution form' });
+    }
+
+    // Powerhouse: base stat total > 580
+    if (total > 580) {
+        bonuses.push({ name: 'Powerhouse', multiplier: 1.05, description: 'Base stats > 580' });
+    }
+
+    // Type Chain: shares a type with previously added Pokemon
+    if (teamSoFar.length > 0) {
+        const prevPokemon = teamSoFar[teamSoFar.length - 1];
+        const prevTypes = prevPokemon.types || [];
+        const sharesType = types.some(t => prevTypes.includes(t));
+        if (sharesType) {
+            // Count consecutive chain length
+            let chainLen = 1;
+            for (let i = teamSoFar.length - 1; i > 0; i--) {
+                const currTypes = teamSoFar[i].types || [];
+                const prevT = teamSoFar[i - 1].types || [];
+                if (currTypes.some(t => prevT.includes(t))) {
+                    chainLen++;
+                } else break;
+            }
+            const chainMultipliers = [1.05, 1.08, 1.10, 1.12, 1.15];
+            const mult = chainMultipliers[Math.min(chainLen, 5) - 1];
+            bonuses.push({ name: 'Type Chain', multiplier: mult, description: `Chain of ${chainLen + 1}` });
+        }
+    }
+
+    return bonuses;
+}
+
+// --- Layer 2: Team-Wide Multipliers ---
+function calculateTeamBonuses(team) {
+    const bonuses = [];
+    const pokemon = team.pokemon;
+    if (pokemon.length < 6) return bonuses;
+
+    const names = pokemon.map(p => p.name.toLowerCase());
+    const allTypes = pokemon.flatMap(p => p.types || []);
+    const uniqueTypes = [...new Set(allTypes)];
+
+    // --- Type Synergy ---
+    // Count how many Pokemon have each type
+    const typeCounts = {};
+    pokemon.forEach(p => {
+        const types = [...new Set(p.types || [])];
+        types.forEach(t => { typeCounts[t] = (typeCounts[t] || 0) + 1; });
+    });
+    const maxTypeCount = Math.max(...Object.values(typeCounts), 0);
+
+    // Mono-Type Master: all 6 share a type
+    if (maxTypeCount === 6) {
+        bonuses.push({ name: 'Mono-Type Master', multiplier: 1.30, description: 'All 6 share a type' });
+    }
+    // Type Harmony: 4-5 share a type (don't stack with Mono-Type)
+    else if (maxTypeCount >= 4) {
+        bonuses.push({ name: 'Type Harmony', multiplier: 1.15, description: `${maxTypeCount} share a type` });
+    }
+
+    // Dual Threat: exactly 2 types represented
+    if (uniqueTypes.length === 2) {
+        bonuses.push({ name: 'Dual Threat', multiplier: 1.10, description: 'Exactly 2 types on team' });
+    }
+
+    // Rainbow Team: 6+ unique types
+    if (uniqueTypes.length >= 6) {
+        bonuses.push({ name: 'Rainbow Team', multiplier: 1.15, description: `${uniqueTypes.length} unique types` });
+    }
+
+    // Perfect Coverage: team types cover all 18 types for super-effective hits
+    const coveredTypes = new Set();
+    uniqueTypes.forEach(attackType => {
+        getSuperEffectiveTargets(attackType).forEach(target => coveredTypes.add(target));
+    });
+    if (coveredTypes.size >= 18) {
+        bonuses.push({ name: 'Perfect Coverage', multiplier: 1.20, description: 'Super-effective against all 18 types' });
+    }
+
+    // --- Pokemon Relationships ---
+    // Evolution Chain: complete 3-stage line
+    const chainsOnTeam = new Set();
+    names.forEach(name => {
+        const evo = EVOLUTION_LOOKUP[name];
+        if (evo && evo.chainLength === 3) {
+            const chainKey = evo.chain.join(',');
+            if (!chainsOnTeam.has(chainKey)) {
+                const allPresent = evo.chain.every(member => names.includes(member));
+                if (allPresent) {
+                    chainsOnTeam.add(chainKey);
+                    bonuses.push({ name: 'Evolution Chain', multiplier: 1.10, description: `${evo.chain.map(capitalize).join(' -> ')}` });
+                }
+            }
+        }
+    });
+
+    // Sibling Bond: 2-stage evolution pair (not already counted as full chain)
+    const siblingsCounted = new Set();
+    names.forEach(name => {
+        const evo = EVOLUTION_LOOKUP[name];
+        if (evo) {
+            for (let i = 0; i < evo.chain.length - 1; i++) {
+                const pairKey = `${evo.chain[i]},${evo.chain[i + 1]}`;
+                if (siblingsCounted.has(pairKey)) continue;
+                if (names.includes(evo.chain[i]) && names.includes(evo.chain[i + 1])) {
+                    // Don't count if this is part of a full 3-stage chain already detected
+                    const fullChainKey = evo.chain.join(',');
+                    if (!chainsOnTeam.has(fullChainKey)) {
+                        siblingsCounted.add(pairKey);
+                        bonuses.push({ name: 'Sibling Bond', multiplier: 1.05, description: `${capitalize(evo.chain[i])} & ${capitalize(evo.chain[i + 1])}` });
+                    }
+                }
+            }
+        }
+    });
+
+    // Rival Pair: classic rivals on same team
+    RIVAL_PAIRS.forEach(rival => {
+        if (names.includes(rival.pair[0]) && names.includes(rival.pair[1])) {
+            bonuses.push({ name: 'Rival Pair', multiplier: 1.10, description: `${capitalize(rival.pair[0])} & ${capitalize(rival.pair[1])}` });
+        }
+    });
+
+    // Generation Pure: all 6 from same generation
+    const gens = pokemon.map(p => getGeneration(p.id)).filter(g => g > 0);
+    if (gens.length === 6 && new Set(gens).size === 1) {
+        bonuses.push({ name: 'Generation Pure', multiplier: 1.15, description: `All Gen ${gens[0]}` });
+    }
+
+    // Legendary Assembly: 3+ legendaries
+    const legendaryCount = names.filter(n => pokemonCategories.legendaries.includes(n)).length;
+    if (legendaryCount >= 3) {
+        bonuses.push({ name: 'Legendary Assembly', multiplier: 1.10, description: `${legendaryCount} legendaries` });
+    }
+
+    // --- Strategic Bonuses ---
+    const avgStats = {};
+    ['ATK', 'DEF', 'SP. ATK', 'SP. DEF', 'SPE', 'HP'].forEach(stat => {
+        avgStats[stat] = pokemon.reduce((sum, p) => sum + getStatValue(p, stat), 0) / 6;
+    });
+
+    // Glass Cannon: avg Attack > 120, avg Defense < 70
+    if (avgStats['ATK'] > 120 && avgStats['DEF'] < 70) {
+        bonuses.push({ name: 'Glass Cannon', multiplier: 1.15, description: 'High ATK, low DEF' });
+    }
+
+    // Iron Wall: avg Defense > 120, avg Attack < 70
+    if (avgStats['DEF'] > 120 && avgStats['ATK'] < 70) {
+        bonuses.push({ name: 'Iron Wall', multiplier: 1.15, description: 'High DEF, low ATK' });
+    }
+
+    // Speed Demons: all 6 have Speed > 80
+    if (pokemon.every(p => getStatValue(p, 'SPE') > 80)) {
+        bonuses.push({ name: 'Speed Demons', multiplier: 1.10, description: 'All Speed > 80' });
+    }
+
+    // Underdog Army: all 6 have base stat total < 400
+    if (pokemon.every(p => p.score < 400)) {
+        bonuses.push({ name: 'Underdog Army', multiplier: 1.25, description: 'All base stats < 400' });
+    }
+
+    // Heavyweight Division: all 6 have base stat total > 500
+    if (pokemon.every(p => p.score > 500)) {
+        bonuses.push({ name: 'Heavyweight Division', multiplier: 1.10, description: 'All base stats > 500' });
+    }
+
+    // Stat Harmony: no stat category average differs by more than 20
+    const statAvgValues = Object.values(avgStats);
+    const maxAvg = Math.max(...statAvgValues);
+    const minAvg = Math.min(...statAvgValues);
+    if (maxAvg - minAvg <= 20) {
+        bonuses.push({ name: 'Stat Harmony', multiplier: 1.10, description: 'Balanced stat averages' });
+    }
+
+    return bonuses;
+}
+
+// --- Layer 3: Cross-Team Matchup Bonuses ---
+function calculateCrossTeamBonuses(teamPokemon, opposingPokemon) {
+    const bonuses = []; // Array of { pokemon: name, bonuses: [...] }
+
+    teamPokemon.forEach((pokemon, slotIndex) => {
+        const pokeBonuses = [];
+        const name = pokemon.name.toLowerCase();
+        const types = pokemon.types || [];
+
+        // --- Type Effectiveness ---
+        // Count how many opponents this Pokemon is super-effective against
+        let superEffectiveCount = 0;
+        opposingPokemon.forEach(opp => {
+            const oppTypes = opp.types || [];
+            if (types.some(t => isSuperEffective(t, oppTypes))) {
+                superEffectiveCount++;
+            }
+        });
+
+        // Hard Counter: super-effective against 3+ (higher tier, don't stack with Type Slayer)
+        if (superEffectiveCount >= 3) {
+            pokeBonuses.push({ name: 'Hard Counter', multiplier: 1.20, description: `Super-effective vs ${superEffectiveCount} opponents` });
+        }
+        // Type Slayer: super-effective against 2+
+        else if (superEffectiveCount >= 2) {
+            pokeBonuses.push({ name: 'Type Slayer', multiplier: 1.15, description: `Super-effective vs ${superEffectiveCount} opponents` });
+        }
+
+        // Type Wall: resists 3+ opposing Pokemon's types
+        let resistCount = 0;
+        opposingPokemon.forEach(opp => {
+            const oppTypes = opp.types || [];
+            const resisted = oppTypes.every(ot => types.some(dt => getTypeEffectiveness(ot, dt) <= 0.5));
+            if (resisted) resistCount++;
+        });
+        if (resistCount >= 3) {
+            pokeBonuses.push({ name: 'Type Wall', multiplier: 1.10, description: `Resists ${resistCount} opponents` });
+        }
+
+        // Lone Weakness: no opposing Pokemon has a super-effective type
+        const hasWeakness = opposingPokemon.some(opp => {
+            const oppTypes = opp.types || [];
+            return oppTypes.some(ot => isSuperEffective(ot, types));
+        });
+        if (!hasWeakness) {
+            pokeBonuses.push({ name: 'Lone Weakness', multiplier: 1.10, description: 'No opponent hits super-effectively' });
+        }
+
+        // Shutdown: completely walls an opponent (resist both their types, they can't hit super-effectively)
+        opposingPokemon.forEach(opp => {
+            const oppTypes = opp.types || [];
+            const resistsBoth = oppTypes.every(ot => {
+                return types.some(dt => getTypeEffectiveness(ot, dt) <= 0.5);
+            });
+            const oppCantHitSE = !oppTypes.some(ot => isSuperEffective(ot, types));
+            if (resistsBoth && oppCantHitSE) {
+                pokeBonuses.push({ name: 'Shutdown', multiplier: 1.15, description: `Walls ${opp.name}` });
+            }
+        });
+
+        // --- Rival Matchups (cross-team) ---
+        RIVAL_PAIRS.forEach(rival => {
+            const isFirst = rival.pair[0] === name;
+            const isSecond = rival.pair[1] === name;
+            if (isFirst || isSecond) {
+                const rivalName = isFirst ? rival.pair[1] : rival.pair[0];
+                const rivalOnOtherTeam = opposingPokemon.some(opp => opp.name.toLowerCase() === rivalName);
+                if (rivalOnOtherTeam) {
+                    pokeBonuses.push({ name: 'Rival Clash', multiplier: rival.bonus, description: `vs ${capitalize(rivalName)}` });
+                }
+            }
+        });
+
+        // --- Evolution Dominance ---
+        const evoData = EVOLUTION_LOOKUP[name];
+        if (evoData) {
+            opposingPokemon.forEach(opp => {
+                const oppName = opp.name.toLowerCase();
+                const oppEvo = EVOLUTION_LOOKUP[oppName];
+                if (oppEvo && oppEvo.chain.join(',') === evoData.chain.join(',')) {
+                    // Same evolution line
+                    if (evoData.stage > oppEvo.stage) {
+                        // Evolution Flex: we're the evolved form
+                        pokeBonuses.push({ name: 'Evolution Flex', multiplier: 1.10, description: `Evolved form of ${opp.name}` });
+                    }
+                }
+            });
+        }
+
+        if (pokeBonuses.length > 0) {
+            bonuses.push({ pokemon: pokemon.name, slotIndex, bonuses: pokeBonuses });
+        }
+    });
+
+    return bonuses;
+}
+
+// --- Layer 4: Stat Duels ---
+function calculateStatDuels(teamPokemon, opposingPokemon) {
+    const bonuses = []; // Array of { pokemon: name, bonuses: [...] }
+    const allPokemon = [...teamPokemon, ...opposingPokemon];
+    const statNames = ['HP', 'ATK', 'DEF', 'SP. ATK', 'SP. DEF', 'SPE'];
+
+    // Find stat champions across all 12 Pokemon
+    const statChampions = {};
+    statNames.forEach(stat => {
+        let maxVal = 0;
+        let champions = [];
+        allPokemon.forEach(p => {
+            const val = getStatValue(p, stat);
+            if (val > maxVal) {
+                maxVal = val;
+                champions = [p.name];
+            } else if (val === maxVal) {
+                champions.push(p.name);
+            }
+        });
+        statChampions[stat] = { value: maxVal, names: champions };
+    });
+
+    teamPokemon.forEach((pokemon, slotIndex) => {
+        const pokeBonuses = [];
+        const name = pokemon.name;
+
+        // Stat Champion: highest value for a stat across all 12
+        let championCount = 0;
+        statNames.forEach(stat => {
+            if (statChampions[stat].names.includes(name) && statChampions[stat].names.length === 1) {
+                championCount++;
+            }
+        });
+        if (championCount >= 2) {
+            pokeBonuses.push({ name: 'Ultimate Stat', multiplier: 1.20, description: `Highest in ${championCount} stat categories` });
+        } else if (championCount === 1) {
+            pokeBonuses.push({ name: 'Stat Champion', multiplier: 1.10, description: 'Highest single stat across all 12' });
+        }
+
+        // Stat Sweep: beats slot-matched opponent in 4+ of 6 stats
+        if (slotIndex < opposingPokemon.length) {
+            const opponent = opposingPokemon[slotIndex];
+            let winsCount = 0;
+            statNames.forEach(stat => {
+                if (getStatValue(pokemon, stat) > getStatValue(opponent, stat)) winsCount++;
+            });
+            if (winsCount >= 4) {
+                pokeBonuses.push({ name: 'Stat Sweep', multiplier: 1.15, description: `Beats ${opponent.name} in ${winsCount}/6 stats` });
+            }
+        }
+
+        if (pokeBonuses.length > 0) {
+            bonuses.push({ pokemon: name, slotIndex, bonuses: pokeBonuses });
+        }
+    });
+
+    // Underdog Triumph: pre-evolution beats a higher stage from same line (checked after scores are tallied)
+    // This is deferred to the main calculation function since it needs final scores
+
+    return bonuses;
+}
+
+// --- Master Arcade Score Calculation ---
+function calculateArcadeScore(teamData, opposingTeamData) {
+    const pokemon = teamData.pokemon;
+    if (pokemon.length !== 6) return null;
+
+    // Layer 1: Individual bonuses (calculated as if adding sequentially)
+    const individualResults = [];
+    const teamSoFar = [];
+    pokemon.forEach(p => {
+        const bonuses = calculateIndividualBonuses(p, teamSoFar);
+        const individualMultiplier = bonuses.reduce((mult, b) => mult * b.multiplier, 1.0);
+        const adjustedScore = Math.round(p.score * individualMultiplier);
+        individualResults.push({
+            pokemon: p.name,
+            baseScore: p.score,
+            bonuses: bonuses,
+            individualMultiplier: individualMultiplier,
+            adjustedScore: adjustedScore
+        });
+        teamSoFar.push(p);
+    });
+
+    // Layer 2: Team-wide bonuses
+    const teamBonuses = calculateTeamBonuses(teamData);
+    const teamMultiplier = teamBonuses.reduce((mult, b) => mult * b.multiplier, 1.0);
+
+    // Layer 3: Cross-team matchup bonuses (only if opposing team is provided)
+    let crossTeamBonuses = [];
+    if (opposingTeamData && opposingTeamData.pokemon.length === 6) {
+        crossTeamBonuses = calculateCrossTeamBonuses(pokemon, opposingTeamData.pokemon);
+    }
+
+    // Layer 4: Stat duels
+    let statDuelBonuses = [];
+    if (opposingTeamData && opposingTeamData.pokemon.length === 6) {
+        statDuelBonuses = calculateStatDuels(pokemon, opposingTeamData.pokemon);
+    }
+
+    // Build per-Pokemon matchup multipliers (from layers 3+4)
+    const matchupMultipliers = {};
+    pokemon.forEach(p => { matchupMultipliers[p.name] = 1.0; });
+
+    crossTeamBonuses.forEach(entry => {
+        entry.bonuses.forEach(b => {
+            matchupMultipliers[entry.pokemon] *= b.multiplier;
+        });
+    });
+    statDuelBonuses.forEach(entry => {
+        entry.bonuses.forEach(b => {
+            matchupMultipliers[entry.pokemon] *= b.multiplier;
+        });
+    });
+
+    // Calculate final arcade score
+    // arcadeScore = sum(pokemon.baseStats * individualMult * matchupMult) * teamMultiplier
+    let arcadeTotal = 0;
+    individualResults.forEach(result => {
+        const matchupMult = matchupMultipliers[result.pokemon] || 1.0;
+        const pokemonArcadeScore = Math.round(result.baseScore * result.individualMultiplier * matchupMult);
+        arcadeTotal += pokemonArcadeScore;
+    });
+    arcadeTotal = Math.round(arcadeTotal * teamMultiplier);
+
+    // Check for Underdog Triumph (Layer 3 - deferred)
+    if (opposingTeamData && opposingTeamData.pokemon.length === 6) {
+        pokemon.forEach((p, i) => {
+            const evoData = EVOLUTION_LOOKUP[p.name.toLowerCase()];
+            if (!evoData) return;
+            opposingTeamData.pokemon.forEach(opp => {
+                const oppEvo = EVOLUTION_LOOKUP[opp.name.toLowerCase()];
+                if (oppEvo && oppEvo.chain.join(',') === evoData.chain.join(',') && evoData.stage < oppEvo.stage) {
+                    // This is a pre-evolution facing its evolved form
+                    const myAdjusted = individualResults[i].adjustedScore;
+                    const oppResult = calculateIndividualBonuses(opp, []);
+                    const oppMult = oppResult.reduce((m, b) => m * b.multiplier, 1.0);
+                    const oppAdjusted = Math.round(opp.score * oppMult);
+                    if (myAdjusted > oppAdjusted) {
+                        // Underdog Triumph applies retroactively as a bonus
+                        if (!crossTeamBonuses.find(e => e.pokemon === p.name && e.bonuses.some(b => b.name === 'Underdog Triumph'))) {
+                            crossTeamBonuses.push({
+                                pokemon: p.name,
+                                slotIndex: i,
+                                bonuses: [{ name: 'Underdog Triumph', multiplier: 1.25, description: `Pre-evo beats ${opp.name}` }]
+                            });
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    const baseTotal = pokemon.reduce((sum, p) => sum + p.score, 0);
+
+    return {
+        baseTotal,
+        arcadeTotal,
+        teamMultiplier,
+        teamBonuses,
+        individualResults,
+        crossTeamBonuses,
+        statDuelBonuses,
+        allBonuses: [
+            ...teamBonuses.map(b => ({ ...b, scope: 'team' })),
+            ...individualResults.flatMap(r => r.bonuses.map(b => ({ ...b, scope: 'individual', pokemon: r.pokemon }))),
+            ...crossTeamBonuses.flatMap(r => r.bonuses.map(b => ({ ...b, scope: 'matchup', pokemon: r.pokemon }))),
+            ...statDuelBonuses.flatMap(r => r.bonuses.map(b => ({ ...b, scope: 'duel', pokemon: r.pokemon })))
+        ]
+    };
+}
 
 // Achievement Definitions
 // ========================
@@ -1346,6 +2046,7 @@ async function fetchPokemon(identifier) {
     });
 
     return {
+        id: data.id,
         name: capitalize(data.name),
         stats: processedStats,
         types: types,
@@ -1404,6 +2105,9 @@ function generatePokemonCard(pokemon, teamId) {
     const card = document.createElement('div');
     card.classList.add('pokemon-card');
     card.dataset.totalStats = pokemon.totalStats;
+    card.dataset.pokemonId = pokemon.id || 0;
+    card.dataset.types = JSON.stringify(pokemon.types);
+    card.dataset.stats = JSON.stringify(pokemon.stats);
 
     const img = document.createElement('img');
     img.src = pokemon.sprite;
@@ -1879,9 +2583,12 @@ function checkForWinner() {
     }
 }
 
+// Store current arcade scores for saving
+let currentArcadeScores = null;
+
 async function determineWinner() {
-    const team1Score = parseInt(getTeamScoreElement('team1').textContent);
-    const team2Score = parseInt(getTeamScoreElement('team2').textContent);
+    const team1BaseScore = parseInt(getTeamScoreElement('team1').textContent);
+    const team2BaseScore = parseInt(getTeamScoreElement('team2').textContent);
 
     const team1 = getTeamElement('team1');
     const team2 = getTeamElement('team2');
@@ -1894,8 +2601,31 @@ async function determineWinner() {
     team1Text.textContent = '';
     team2Text.textContent = '';
 
+    const team1Data = getTeamData('team1');
+    const team2Data = getTeamData('team2');
+
+    // Calculate arcade scores if arcade mode is active
+    let team1Score = team1BaseScore;
+    let team2Score = team2BaseScore;
+    currentArcadeScores = null;
+
+    if (arcadeModeActive && arcadeModeUnlocked) {
+        const arcade1 = calculateArcadeScore(team1Data, team2Data);
+        const arcade2 = calculateArcadeScore(team2Data, team1Data);
+
+        if (arcade1 && arcade2) {
+            team1Score = arcade1.arcadeTotal;
+            team2Score = arcade2.arcadeTotal;
+            currentArcadeScores = { team1: arcade1, team2: arcade2 };
+
+            // Show arcade bonus UI
+            showArcadeBonusDisplay('team1', arcade1);
+            showArcadeBonusDisplay('team2', arcade2);
+        }
+    }
+
     // A short delay for suspense before showing the result
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, arcadeModeActive ? 800 : 500));
 
     let team1IsWinner = false;
     let team2IsWinner = false;
@@ -1915,9 +2645,27 @@ async function determineWinner() {
         team2Text.textContent = 'Tie!';
     }
 
+    // Arcade battle effects
+    if (arcadeModeActive && currentArcadeScores) {
+        const margin = Math.abs(team1Score - team2Score) / Math.min(team1Score, team2Score);
+        if (margin > 0.20) {
+            showArcadeEffect('CRITICAL HIT!', 'critical-hit');
+        }
+        // Check PERFECT: every Pokemon earned at least one bonus
+        const arcade1 = currentArcadeScores.team1;
+        const arcade2 = currentArcadeScores.team2;
+        const allHaveBonuses = arcade1.individualResults.every(r => r.bonuses.length > 0)
+            && arcade2.individualResults.every(r => r.bonuses.length > 0);
+        if (allHaveBonuses) {
+            setTimeout(() => showArcadeEffect('PERFECT!', 'perfect'), 1500);
+        }
+
+        // Show arcade score in the score display
+        showArcadeScoreSummary('team1', currentArcadeScores.team1);
+        showArcadeScoreSummary('team2', currentArcadeScores.team2);
+    }
+
     // Detect and display achievements
-    const team1Data = getTeamData('team1');
-    const team2Data = getTeamData('team2');
     const isTie = !team1IsWinner && !team2IsWinner;
     currentBattleAchievements.team1 = detectAchievements(team1Data, team1IsWinner, isTie);
     currentBattleAchievements.team2 = detectAchievements(team2Data, team2IsWinner, isTie);
@@ -1941,6 +2689,125 @@ async function determineWinner() {
     isBattleConcluded = true;
 }
 
+// Show arcade bonus tags on individual Pokemon cards
+function showArcadeBonusDisplay(teamId, arcadeResult) {
+    const grid = getTeamGrid(teamId);
+    const cards = Array.from(grid.children);
+
+    arcadeResult.individualResults.forEach((result, i) => {
+        if (i >= cards.length) return;
+        const card = cards[i];
+
+        // Remove any existing bonus display
+        card.querySelector('.arcade-individual-bonuses')?.remove();
+
+        if (result.bonuses.length === 0 && result.individualMultiplier === 1.0) return;
+
+        const bonusDiv = document.createElement('div');
+        bonusDiv.className = 'arcade-individual-bonuses';
+
+        result.bonuses.forEach(bonus => {
+            const tag = document.createElement('span');
+            tag.className = 'arcade-bonus-tag';
+            tag.textContent = `+${Math.round((bonus.multiplier - 1) * 100)}% ${bonus.name}`;
+            tag.title = bonus.description;
+            bonusDiv.appendChild(tag);
+        });
+
+        if (result.individualMultiplier !== 1.0) {
+            const multDisplay = document.createElement('div');
+            multDisplay.className = 'arcade-multiplier-display';
+            multDisplay.textContent = `${result.individualMultiplier.toFixed(3)}x → ${result.adjustedScore}`;
+            bonusDiv.appendChild(multDisplay);
+        }
+
+        card.appendChild(bonusDiv);
+    });
+
+    // Show cross-team bonuses on individual cards
+    arcadeResult.crossTeamBonuses.forEach(entry => {
+        const cardIndex = arcadeResult.individualResults.findIndex(r => r.pokemon === entry.pokemon);
+        if (cardIndex < 0 || cardIndex >= cards.length) return;
+        const card = cards[cardIndex];
+
+        let bonusDiv = card.querySelector('.arcade-individual-bonuses');
+        if (!bonusDiv) {
+            bonusDiv = document.createElement('div');
+            bonusDiv.className = 'arcade-individual-bonuses';
+            card.appendChild(bonusDiv);
+        }
+
+        entry.bonuses.forEach(bonus => {
+            const tag = document.createElement('span');
+            tag.className = 'arcade-bonus-tag arcade-matchup-tag';
+            tag.textContent = `+${Math.round((bonus.multiplier - 1) * 100)}% ${bonus.name}`;
+            tag.title = bonus.description;
+            bonusDiv.appendChild(tag);
+        });
+    });
+
+    // Show stat duel bonuses
+    arcadeResult.statDuelBonuses.forEach(entry => {
+        const cardIndex = entry.slotIndex;
+        if (cardIndex < 0 || cardIndex >= cards.length) return;
+        const card = cards[cardIndex];
+
+        let bonusDiv = card.querySelector('.arcade-individual-bonuses');
+        if (!bonusDiv) {
+            bonusDiv = document.createElement('div');
+            bonusDiv.className = 'arcade-individual-bonuses';
+            card.appendChild(bonusDiv);
+        }
+
+        entry.bonuses.forEach(bonus => {
+            const tag = document.createElement('span');
+            tag.className = 'arcade-bonus-tag arcade-duel-tag';
+            tag.textContent = `+${Math.round((bonus.multiplier - 1) * 100)}% ${bonus.name}`;
+            tag.title = bonus.description;
+            bonusDiv.appendChild(tag);
+        });
+    });
+}
+
+// Show team-wide arcade score summary below the team score
+function showArcadeScoreSummary(teamId, arcadeResult) {
+    const teamEl = getTeamElement(teamId);
+    // Remove existing summary
+    teamEl.querySelector('.arcade-team-summary')?.remove();
+
+    const summary = document.createElement('div');
+    summary.className = 'arcade-team-summary arcade-bonuses-section';
+
+    let html = `<div class="arcade-score-line">Arcade Score: <strong>${arcadeResult.arcadeTotal.toLocaleString()}</strong></div>`;
+
+    if (arcadeResult.teamBonuses.length > 0) {
+        html += '<div class="arcade-team-bonuses-list">';
+        arcadeResult.teamBonuses.forEach(b => {
+            html += `<span class="arcade-team-bonus-tag" title="${b.description}">${b.name} ${b.multiplier.toFixed(2)}x</span>`;
+        });
+        html += `<div class="arcade-team-multiplier">Team Multiplier: ${arcadeResult.teamMultiplier.toFixed(3)}x</div>`;
+        html += '</div>';
+    }
+
+    summary.innerHTML = html;
+
+    // Insert after the score paragraph
+    const scoreP = teamEl.querySelector('p');
+    scoreP.insertAdjacentElement('afterend', summary);
+}
+
+// Show dramatic arcade effect overlay (CRITICAL HIT, PERFECT)
+function showArcadeEffect(text, className) {
+    const overlay = document.createElement('div');
+    overlay.className = `arcade-effect-overlay ${className}`;
+    overlay.innerHTML = `<div class="arcade-effect-text">${text}</div>`;
+    document.body.appendChild(overlay);
+    setTimeout(() => {
+        overlay.classList.add('arcade-effect-fade');
+        setTimeout(() => overlay.remove(), 600);
+    }, 1800);
+}
+
 function capitalize(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
@@ -1954,7 +2821,10 @@ function getTeamData(teamId) {
     const pokemon = Array.from(pokemonGrid.children).map(card => ({
         name: card.querySelector('.pokemon-name').textContent,
         score: parseInt(card.dataset.totalStats, 10),
-        sprite: card.querySelector('.pokemon-sprite')?.src || null
+        sprite: card.querySelector('.pokemon-sprite')?.src || null,
+        types: JSON.parse(card.dataset.types || '[]'),
+        stats: JSON.parse(card.dataset.stats || '[]'),
+        id: parseInt(card.dataset.pokemonId || '0', 10)
     }));
     return { name, score, pokemon };
 }
@@ -1971,8 +2841,15 @@ async function saveCurrentBattle() {
     const team1Data = getTeamData('team1');
     const team2Data = getTeamData('team2');
 
-    const team1Score = parseInt(team1Data.score);
-    const team2Score = parseInt(team2Data.score);
+    let team1Score = parseInt(team1Data.score);
+    let team2Score = parseInt(team2Data.score);
+
+    // Use arcade scores for winner determination if arcade mode was active
+    const isArcadeBattle = arcadeModeActive && arcadeModeUnlocked && currentArcadeScores;
+    if (isArcadeBattle) {
+        team1Score = currentArcadeScores.team1.arcadeTotal;
+        team2Score = currentArcadeScores.team2.arcadeTotal;
+    }
 
     let winner;
     if (team1Score > team2Score) winner = 'team1';
@@ -1998,6 +2875,31 @@ async function saveCurrentBattle() {
             crossTeam: crossTeamAchievements
         }
     };
+
+    // Add arcade data if this was an arcade battle
+    if (isArcadeBattle) {
+        result.arcadeMode = true;
+        result.arcadeScores = {
+            team1: {
+                baseTotal: currentArcadeScores.team1.baseTotal,
+                teamMultiplier: currentArcadeScores.team1.teamMultiplier,
+                arcadeTotal: currentArcadeScores.team1.arcadeTotal,
+                bonuses: currentArcadeScores.team1.allBonuses,
+                pokemonBonuses: currentArcadeScores.team1.individualResults.map(r => ({
+                    pokemon: r.pokemon, bonuses: r.bonuses, individualMultiplier: r.individualMultiplier
+                }))
+            },
+            team2: {
+                baseTotal: currentArcadeScores.team2.baseTotal,
+                teamMultiplier: currentArcadeScores.team2.teamMultiplier,
+                arcadeTotal: currentArcadeScores.team2.arcadeTotal,
+                bonuses: currentArcadeScores.team2.allBonuses,
+                pokemonBonuses: currentArcadeScores.team2.individualResults.map(r => ({
+                    pokemon: r.pokemon, bonuses: r.bonuses, individualMultiplier: r.individualMultiplier
+                }))
+            }
+        };
+    }
 
     // Show GOAT/WOAT achievements if any were earned
     const allGoatWoat = [...goatWoatAchievements.team1, ...goatWoatAchievements.team2];
@@ -2089,9 +2991,37 @@ function renderHistoryEntry(result) {
         }
     }
 
+    // Arcade mode badge and score display
+    const arcadeBadgeHTML = result.arcadeMode ? '<span class="history-arcade-badge">ARCADE</span>' : '';
+    let arcadeScoreHTML = '';
+    if (result.arcadeMode && result.arcadeScores) {
+        const as = result.arcadeScores;
+        arcadeScoreHTML = `
+            <div class="history-arcade-scores">
+                <div class="history-arcade-line">
+                    <span>Arcade: ${as.team1.arcadeTotal.toLocaleString()} (${as.team1.teamMultiplier.toFixed(2)}x)</span>
+                    <span>vs</span>
+                    <span>Arcade: ${as.team2.arcadeTotal.toLocaleString()} (${as.team2.teamMultiplier.toFixed(2)}x)</span>
+                </div>
+                <details class="history-arcade-details">
+                    <summary>Multiplier Breakdown</summary>
+                    <div class="history-arcade-breakdown">
+                        <div>
+                            <strong>${result.team1.name}</strong>
+                            ${as.team1.bonuses.map(b => `<div class="history-bonus-item">${b.name}: ${b.multiplier.toFixed(2)}x <small>(${b.scope}${b.pokemon ? ' - ' + b.pokemon : ''})</small></div>`).join('')}
+                        </div>
+                        <div>
+                            <strong>${result.team2.name}</strong>
+                            ${as.team2.bonuses.map(b => `<div class="history-bonus-item">${b.name}: ${b.multiplier.toFixed(2)}x <small>(${b.scope}${b.pokemon ? ' - ' + b.pokemon : ''})</small></div>`).join('')}
+                        </div>
+                    </div>
+                </details>
+            </div>`;
+    }
+
     entry.innerHTML = `
         <button class="delete-history-btn" title="Delete this entry">&times;</button>
-        <div class="history-meta"><span>${new Date(result.date).toLocaleString()}</span></div>
+        <div class="history-meta"><span>${new Date(result.date).toLocaleString()}</span> ${arcadeBadgeHTML}</div>
         <div class="history-team-compact">
             <h3>${result.team1.name} (${result.team1.score})${team1WinnerTag}${tieTag}</h3>
             <div class="history-pokemon-list">${team1PokemonList}</div>
@@ -2100,6 +3030,7 @@ function renderHistoryEntry(result) {
             <h3>${result.team2.name} (${result.team2.score})${team2WinnerTag}${tieTag}</h3>
             <div class="history-pokemon-list">${team2PokemonList}</div>
         </div>
+        ${arcadeScoreHTML}
         ${achievementBadgesHTML}
         <span class="load-hint">Click to Load Battle</span>`;
 
@@ -2334,6 +3265,157 @@ function importHistory() {
         reader.readAsText(file, 'UTF-8');
     };
     input.click();
+}
+
+// ==================== Season Stashing System ====================
+
+function stashSeason() {
+    const history = JSON.parse(localStorage.getItem('battleHistory')) || [];
+    if (history.length === 0) {
+        alert('No battle history to stash.');
+        return;
+    }
+
+    // Get existing archived seasons to determine default name
+    const archived = JSON.parse(localStorage.getItem('archivedSeasons')) || [];
+    const defaultName = `Season ${archived.length + 1}`;
+    const seasonName = prompt('Name this season:', defaultName);
+    if (seasonName === null) return; // User cancelled
+
+    // Calculate summary (wins-losses from the perspective of most frequent team)
+    const winCounts = {};
+    history.forEach(b => {
+        if (b.winner !== 'tie') {
+            const name = b[b.winner]?.name;
+            if (name) winCounts[name] = (winCounts[name] || 0) + 1;
+        }
+    });
+    const totalBattles = history.length;
+    const topTeam = Object.entries(winCounts).sort((a, b) => b[1] - a[1])[0];
+    const summary = topTeam ? `${topTeam[1]}-${totalBattles - topTeam[1]} (${totalBattles} battles)` : `${totalBattles} battles`;
+
+    // Get date range
+    const dates = history.map(h => h.date).filter(Boolean).sort();
+    const startDate = dates[0] ? new Date(dates[0]).toLocaleDateString() : '';
+    const endDate = dates[dates.length - 1] ? new Date(dates[dates.length - 1]).toLocaleDateString() : '';
+
+    const season = {
+        id: Date.now(),
+        name: seasonName || defaultName,
+        summary: summary,
+        startDate: startDate,
+        endDate: endDate,
+        history: history
+    };
+
+    archived.push(season);
+    localStorage.setItem('archivedSeasons', JSON.stringify(archived));
+
+    // Clear current battle history
+    localStorage.setItem('battleHistory', JSON.stringify([]));
+    loadHistory();
+    renderArchivedSeasons();
+
+    alert(`Season "${season.name}" stashed! ${history.length} battles archived. Starting fresh.`);
+}
+
+function loadArchivedSeason(seasonId) {
+    const archived = JSON.parse(localStorage.getItem('archivedSeasons')) || [];
+    const seasonIndex = archived.findIndex(s => s.id === seasonId);
+    if (seasonIndex === -1) return;
+
+    const seasonToLoad = archived[seasonIndex];
+
+    // Stash current history if non-empty
+    const currentHistory = JSON.parse(localStorage.getItem('battleHistory')) || [];
+    if (currentHistory.length > 0) {
+        const stashCurrent = confirm('Current history is not empty. Stash it as a season before loading?');
+        if (stashCurrent) {
+            const archivedCurrent = JSON.parse(localStorage.getItem('archivedSeasons')) || [];
+            const defaultName = `Season ${archivedCurrent.length + 1}`;
+            const name = prompt('Name the current season:', defaultName);
+            if (name === null) return;
+
+            const winCounts = {};
+            currentHistory.forEach(b => {
+                if (b.winner !== 'tie') {
+                    const wn = b[b.winner]?.name;
+                    if (wn) winCounts[wn] = (winCounts[wn] || 0) + 1;
+                }
+            });
+            const total = currentHistory.length;
+            const top = Object.entries(winCounts).sort((a, b) => b[1] - a[1])[0];
+            const summ = top ? `${top[1]}-${total - top[1]} (${total} battles)` : `${total} battles`;
+            const dates = currentHistory.map(h => h.date).filter(Boolean).sort();
+
+            archivedCurrent.push({
+                id: Date.now(),
+                name: name || defaultName,
+                summary: summ,
+                startDate: dates[0] ? new Date(dates[0]).toLocaleDateString() : '',
+                endDate: dates[dates.length - 1] ? new Date(dates[dates.length - 1]).toLocaleDateString() : '',
+                history: currentHistory
+            });
+            localStorage.setItem('archivedSeasons', JSON.stringify(archivedCurrent));
+        }
+    }
+
+    // Load the selected season into active history
+    localStorage.setItem('battleHistory', JSON.stringify(seasonToLoad.history));
+
+    // Remove it from archive
+    const freshArchived = JSON.parse(localStorage.getItem('archivedSeasons')) || [];
+    const idx = freshArchived.findIndex(s => s.id === seasonId);
+    if (idx !== -1) freshArchived.splice(idx, 1);
+    localStorage.setItem('archivedSeasons', JSON.stringify(freshArchived));
+
+    loadHistory();
+    renderArchivedSeasons();
+}
+
+function deleteArchivedSeason(seasonId) {
+    if (!confirm('Delete this archived season permanently?')) return;
+    const archived = JSON.parse(localStorage.getItem('archivedSeasons')) || [];
+    const filtered = archived.filter(s => s.id !== seasonId);
+    localStorage.setItem('archivedSeasons', JSON.stringify(filtered));
+    renderArchivedSeasons();
+}
+
+function renderArchivedSeasons() {
+    const container = document.getElementById('archived-seasons-container');
+    if (!container) return;
+
+    const archived = JSON.parse(localStorage.getItem('archivedSeasons')) || [];
+    if (archived.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let html = '<div class="archived-seasons"><h3>Archived Seasons</h3>';
+    archived.forEach(season => {
+        html += `
+            <div class="archived-season-card" data-season-id="${season.id}">
+                <div class="season-header">
+                    <strong>${season.name}</strong>
+                    <span class="season-summary">${season.summary}</span>
+                </div>
+                <div class="season-dates">${season.startDate} - ${season.endDate}</div>
+                <div class="season-actions">
+                    <button class="season-load-btn" data-season-id="${season.id}">Load</button>
+                    <button class="season-delete-btn" data-season-id="${season.id}">Delete</button>
+                </div>
+            </div>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+
+    // Attach event listeners
+    container.querySelectorAll('.season-load-btn').forEach(btn => {
+        btn.addEventListener('click', () => loadArchivedSeason(parseInt(btn.dataset.seasonId)));
+    });
+    container.querySelectorAll('.season-delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteArchivedSeason(parseInt(btn.dataset.seasonId)));
+    });
 }
 
 function updateWinTally() {
@@ -2650,6 +3732,96 @@ async function loadAllPokemonNames() {
 }
 loadAllPokemonNames();
 
+// ==================== Arcade Mode Toggle ====================
+
+function initArcadeToggle() {
+    // Check if arcade mode was previously unlocked
+    arcadeModeUnlocked = localStorage.getItem('arcadeModeUnlocked') === 'true';
+    arcadeModeActive = localStorage.getItem('arcadeMode') === 'true' && arcadeModeUnlocked;
+
+    // Check if anyone already has 100+ wins (auto-unlock on load)
+    if (!arcadeModeUnlocked) {
+        const history = JSON.parse(localStorage.getItem('battleHistory')) || [];
+        const winCounts = {};
+        history.forEach(battle => {
+            if (battle.winner !== 'tie') {
+                const winnerName = battle[battle.winner]?.name;
+                if (winnerName) winCounts[winnerName] = (winCounts[winnerName] || 0) + 1;
+            }
+        });
+        if (Object.values(winCounts).some(count => count >= CENTURY_WINS_MILESTONE)) {
+            arcadeModeUnlocked = true;
+            localStorage.setItem('arcadeModeUnlocked', 'true');
+        }
+    }
+
+    // Create the toggle container
+    const toggleContainer = document.createElement('div');
+    toggleContainer.id = 'arcade-toggle-container';
+    toggleContainer.className = 'arcade-toggle-container';
+    toggleContainer.innerHTML = `
+        <label class="arcade-toggle-label" title="Toggle Arcade Mode scoring">
+            <input type="checkbox" id="arcade-toggle" ${arcadeModeActive ? 'checked' : ''}>
+            <span class="arcade-toggle-slider"></span>
+            <span class="arcade-toggle-text">ARCADE</span>
+        </label>
+    `;
+
+    // Insert next to the h1 title
+    const title = document.querySelector('h1');
+    title.style.position = 'relative';
+    title.appendChild(toggleContainer);
+
+    // Add ARCADE badge next to title when active
+    const arcadeBadge = document.createElement('span');
+    arcadeBadge.id = 'arcade-badge';
+    arcadeBadge.className = 'arcade-badge';
+    arcadeBadge.textContent = 'ARCADE';
+    title.appendChild(arcadeBadge);
+
+    // Set initial visibility
+    if (!arcadeModeUnlocked) {
+        toggleContainer.style.display = 'none';
+    }
+    updateArcadeVisuals();
+
+    // Toggle event
+    document.getElementById('arcade-toggle').addEventListener('change', (e) => {
+        arcadeModeActive = e.target.checked;
+        localStorage.setItem('arcadeMode', arcadeModeActive.toString());
+        updateArcadeVisuals();
+    });
+}
+
+function unlockArcadeMode() {
+    if (arcadeModeUnlocked) return;
+    arcadeModeUnlocked = true;
+    localStorage.setItem('arcadeModeUnlocked', 'true');
+    const toggleContainer = document.getElementById('arcade-toggle-container');
+    if (toggleContainer) {
+        toggleContainer.style.display = '';
+        toggleContainer.classList.add('arcade-unlock-flash');
+        setTimeout(() => toggleContainer.classList.remove('arcade-unlock-flash'), 2000);
+    }
+}
+
+function updateArcadeVisuals() {
+    const teamsContainer = document.querySelector('.teams');
+    const badge = document.getElementById('arcade-badge');
+
+    if (arcadeModeActive && arcadeModeUnlocked) {
+        teamsContainer.classList.add('arcade-active');
+        if (badge) badge.style.display = 'inline-block';
+        // Show arcade bonus sections if they exist
+        document.querySelectorAll('.arcade-bonuses-section').forEach(el => el.style.display = '');
+    } else {
+        teamsContainer.classList.remove('arcade-active');
+        if (badge) badge.style.display = 'none';
+        // Hide arcade bonus sections
+        document.querySelectorAll('.arcade-bonuses-section').forEach(el => el.style.display = 'none');
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     // Create and inject save button and history section
     const saveButtonContainer = document.createElement('div');
@@ -2666,6 +3838,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <input type="number" id="history-page-size" class="history-page-size-input" min="1" max="50" title="Set items per page">
                 <button id="import-history-btn" class="history-control-btn" title="Import History">Import</button>
                 <button id="export-history-btn" class="history-control-btn" title="Export History">Export</button>
+                <button id="stash-season-btn" class="history-control-btn stash-btn" title="Stash current season and start fresh">Stash Season</button>
             </div>
         </div>
         <div id="win-graph-container">
@@ -2698,11 +3871,15 @@ document.addEventListener("DOMContentLoaded", () => {
         <div id="history-list"></div>
         <div class="history-footer">
             <div id="pagination-controls"></div>
-        </div>`;
+        </div>
+        <div id="archived-seasons-container"></div>`;
 
     const teamsContainer = document.querySelector('.teams');
     teamsContainer.insertAdjacentElement('afterend', saveButtonContainer);
     document.body.appendChild(historyContainer);
+
+    // Arcade Mode Toggle
+    initArcadeToggle();
 
     const pageSizeInput = document.getElementById('history-page-size');
     pageSizeInput.value = DEFAULT_PAGE_SIZE;
@@ -2712,6 +3889,7 @@ document.addEventListener("DOMContentLoaded", () => {
     getSaveButton().addEventListener('click', saveCurrentBattle);
     document.getElementById('import-history-btn').addEventListener('click', importHistory);
     document.getElementById('export-history-btn').addEventListener('click', exportHistory);
+    document.getElementById('stash-season-btn').addEventListener('click', stashSeason);
     document.getElementById('graph-limit').addEventListener('change', renderWinDifferenceGraph);
     document.getElementById('goat-woat-limit').addEventListener('change', updateGoatWoat);
 
@@ -2867,6 +4045,7 @@ window.addEventListener('load', () => {
     // Always hide the streak notification on page load
     hideStreakAchievement();
     loadHistory();
+    renderArchivedSeasons();
     initTesseractWorker(); // Pre-load OCR engine
 });
 window.addEventListener('resize', () => renderWinDifferenceGraph()); // Re-render graph on resize
