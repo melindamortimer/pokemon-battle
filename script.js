@@ -15,6 +15,9 @@ let goatWoatLimit = 3;
 let celebrationTestMode = false; // Set to true to test the 100 wins celebration
 let tesseractWorker = null; // Pre-loaded OCR worker
 let ocrDebug = true; // Set to true to show OCR detection debug logs
+let arcadeMode = false;
+let currentSessionId = null; // ID of the active session (null = unsaved new session)
+let currentBets = { team1: null, team2: null }; // Side bets for current battle
 
 const DEFAULT_PAGE_SIZE = 5;
 const CENTURY_WINS_MILESTONE = 100;
@@ -2458,6 +2461,181 @@ function hideStreakAchievement() {
     }
 }
 
+// ==================== Session Management ====================
+
+function getSessions() {
+    return JSON.parse(localStorage.getItem('sessions')) || [];
+}
+
+function saveSessions(sessions) {
+    localStorage.setItem('sessions', JSON.stringify(sessions));
+}
+
+function generateSessionName() {
+    const now = new Date();
+    return `Session ${now.toLocaleDateString()}`;
+}
+
+function buildSessionSummary(battles) {
+    if (battles.length === 0) return { totalBattles: 0, dateRange: null, winSummary: {} };
+
+    const sorted = [...battles].sort((a, b) => a.id - b.id);
+    const dateRange = {
+        from: sorted[0].date,
+        to: sorted[sorted.length - 1].date
+    };
+
+    const winSummary = {};
+    battles.forEach(result => {
+        if (result.winner === 'tie') return;
+        const winnerName = result[result.winner].name;
+        winSummary[winnerName] = (winSummary[winnerName] || 0) + 1;
+    });
+
+    // Detect mode: if any battle is arcade, label as arcade
+    const hasArcade = battles.some(b => b.mode === 'arcade');
+
+    return {
+        totalBattles: battles.length,
+        dateRange,
+        winSummary,
+        mode: hasArcade ? 'arcade' : 'classic'
+    };
+}
+
+function stashCurrentSession(name) {
+    const battles = JSON.parse(localStorage.getItem('battleHistory')) || [];
+    if (battles.length === 0) return null; // Nothing to stash
+
+    const sessions = getSessions();
+    const session = {
+        id: Date.now(),
+        name: name || generateSessionName(),
+        createdAt: new Date().toISOString(),
+        battles: battles,
+        summary: buildSessionSummary(battles)
+    };
+    sessions.push(session);
+    saveSessions(sessions);
+
+    // Clear current history
+    localStorage.setItem('battleHistory', JSON.stringify([]));
+    fullHistory = [];
+    currentSessionId = null;
+
+    return session;
+}
+
+function loadSession(sessionId) {
+    const sessions = getSessions();
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return false;
+
+    // Auto-stash current session first (if it has battles)
+    const currentBattles = JSON.parse(localStorage.getItem('battleHistory')) || [];
+    if (currentBattles.length > 0) {
+        stashCurrentSession(null);
+    }
+
+    // Load the selected session
+    localStorage.setItem('battleHistory', JSON.stringify(session.battles));
+    currentSessionId = sessionId;
+    loadHistory();
+    return true;
+}
+
+function deleteSession(sessionId) {
+    let sessions = getSessions();
+    sessions = sessions.filter(s => s.id !== sessionId);
+    saveSessions(sessions);
+}
+
+function renameSession(sessionId, newName) {
+    const sessions = getSessions();
+    const session = sessions.find(s => s.id === sessionId);
+    if (session) {
+        session.name = newName;
+        saveSessions(sessions);
+    }
+}
+
+function renderSessionsList() {
+    const container = document.getElementById('sessions-list');
+    if (!container) return;
+
+    const sessions = getSessions();
+    if (sessions.length === 0) {
+        container.innerHTML = '<p class="sessions-empty">No saved sessions yet.</p>';
+        return;
+    }
+
+    container.innerHTML = sessions.map(session => {
+        const summary = session.summary || buildSessionSummary(session.battles);
+        const winEntries = Object.entries(summary.winSummary || {})
+            .sort(([, a], [, b]) => b - a)
+            .map(([name, wins]) => `${name}: ${wins}W`)
+            .join(', ');
+        const dateRange = summary.dateRange
+            ? `${new Date(summary.dateRange.from).toLocaleDateString()} - ${new Date(summary.dateRange.to).toLocaleDateString()}`
+            : 'No battles';
+        const modeTag = summary.mode === 'arcade' ? '<span class="session-mode-tag arcade">ARCADE</span>' : '<span class="session-mode-tag classic">CLASSIC</span>';
+        const isActive = session.id === currentSessionId;
+
+        return `
+            <div class="session-card ${isActive ? 'active' : ''}" data-session-id="${session.id}">
+                <div class="session-card-header">
+                    <span class="session-name" contenteditable="true" data-session-id="${session.id}">${session.name}</span>
+                    ${modeTag}
+                </div>
+                <div class="session-card-meta">
+                    <span>${dateRange}</span>
+                    <span>${summary.totalBattles} battle${summary.totalBattles !== 1 ? 's' : ''}</span>
+                </div>
+                <div class="session-card-wins">${winEntries || 'No wins'}</div>
+                <div class="session-card-actions">
+                    <button class="session-load-btn" data-session-id="${session.id}" ${isActive ? 'disabled' : ''}>
+                        ${isActive ? 'Active' : 'Load'}
+                    </button>
+                    <button class="session-delete-btn" data-session-id="${session.id}">Delete</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Event delegation for session cards
+    container.querySelectorAll('.session-load-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const sessionId = parseInt(btn.dataset.sessionId);
+            loadSession(sessionId);
+            renderSessionsList();
+        });
+    });
+
+    container.querySelectorAll('.session-delete-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const sessionId = parseInt(btn.dataset.sessionId);
+            if (confirm('Delete this session? This cannot be undone.')) {
+                deleteSession(sessionId);
+                renderSessionsList();
+            }
+        });
+    });
+
+    // Inline rename on blur
+    container.querySelectorAll('.session-name').forEach(nameEl => {
+        nameEl.addEventListener('blur', () => {
+            const sessionId = parseInt(nameEl.dataset.sessionId);
+            const newName = nameEl.textContent.trim();
+            if (newName) renameSession(sessionId, newName);
+        });
+        nameEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); nameEl.blur(); }
+        });
+    });
+}
+
 function updateGoatWoat() {
     const history = fullHistory;
     const allTeams = [];
@@ -2699,6 +2877,55 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="history-footer">
             <div id="pagination-controls"></div>
         </div>`;
+
+    // Create sessions sidebar
+    const sessionsSidebar = document.createElement('div');
+    sessionsSidebar.id = 'sessions-sidebar';
+    sessionsSidebar.className = 'sessions-sidebar';
+    sessionsSidebar.innerHTML = `
+        <div class="sessions-sidebar-header">
+            <h3>Sessions</h3>
+            <button id="close-sidebar-btn" class="sessions-close-btn">&times;</button>
+        </div>
+        <button id="stash-session-btn" class="sessions-action-btn">Stash & Start Fresh</button>
+        <div id="sessions-list" class="sessions-list"></div>
+    `;
+    document.body.appendChild(sessionsSidebar);
+
+    // Create sidebar toggle button (fixed position, right edge)
+    const sidebarToggle = document.createElement('button');
+    sidebarToggle.id = 'sessions-toggle-btn';
+    sidebarToggle.className = 'sessions-toggle-btn';
+    sidebarToggle.innerHTML = '◂ SESSIONS';
+    sidebarToggle.title = 'Sessions';
+    document.body.appendChild(sidebarToggle);
+
+    // Sidebar toggle
+    const openSidebar = () => {
+        sessionsSidebar.classList.add('open');
+        sidebarToggle.style.display = 'none';
+        renderSessionsList();
+    };
+    const closeSidebar = () => {
+        sessionsSidebar.classList.remove('open');
+        sidebarToggle.style.display = '';
+    };
+    document.getElementById('sessions-toggle-btn').addEventListener('click', openSidebar);
+    document.getElementById('close-sidebar-btn').addEventListener('click', closeSidebar);
+
+    // Stash button
+    document.getElementById('stash-session-btn').addEventListener('click', () => {
+        const currentBattles = JSON.parse(localStorage.getItem('battleHistory')) || [];
+        if (currentBattles.length === 0) {
+            alert('No battles to stash. Play some battles first!');
+            return;
+        }
+        const name = prompt('Name this session:', generateSessionName());
+        if (name === null) return; // Cancelled
+        stashCurrentSession(name || generateSessionName());
+        loadHistory();
+        renderSessionsList();
+    });
 
     const teamsContainer = document.querySelector('.teams');
     teamsContainer.insertAdjacentElement('afterend', saveButtonContainer);

@@ -1504,3 +1504,187 @@ button:disabled {
 .achievement-detail-criteria strong {
     color: var(--secondary-accent);
 }
+
+/* ==================== Sessions Sidebar ==================== */
+.sessions-toggle-btn {
+    position: fixed;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 999;
+    width: auto;
+    background: transparent;
+    border: none;
+    color: #555;
+    padding: 10px 3px;
+    margin: 0;
+    cursor: pointer;
+    font-size: 0.7rem;
+    writing-mode: vertical-rl;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    transition: color 0.2s;
+    line-height: 1;
+}
+.sessions-toggle-btn:hover {
+    color: var(--text-color);
+    transform: translateY(-50%) scale(1);
+}
+
+.sessions-sidebar {
+    position: fixed;
+    right: -340px;
+    top: 0;
+    width: 340px;
+    height: 100vh;
+    background: var(--card-bg);
+    border-left: 2px solid var(--secondary-accent);
+    z-index: 1000;
+    transition: right 0.3s ease;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+}
+.sessions-sidebar.open {
+    right: 0;
+}
+
+.sessions-sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+.sessions-sidebar-header h3 {
+    color: var(--text-color);
+    margin: 0;
+    font-size: 1.3rem;
+}
+.sessions-close-btn {
+    width: auto;
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 1.3rem;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    line-height: 1;
+}
+.sessions-close-btn:hover {
+    color: var(--text-color);
+    transform: none;
+}
+
+
+.sessions-action-btn {
+    width: 100%;
+    padding: 10px;
+    background: var(--secondary-accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin-bottom: 16px;
+    transition: opacity 0.2s;
+}
+.sessions-action-btn:hover { opacity: 0.85; }
+
+.sessions-list {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.sessions-empty {
+    color: #888;
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+}
+
+.session-card {
+    background: var(--dark-bg);
+    border: 1px solid var(--primary-accent);
+    border-radius: 8px;
+    padding: 12px;
+}
+.session-card.active {
+    border-color: var(--secondary-accent);
+    box-shadow: 0 0 8px rgba(233, 69, 96, 0.3);
+}
+
+.session-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+.session-name {
+    color: var(--text-color);
+    font-weight: 700;
+    font-size: 0.95rem;
+    outline: none;
+    border-bottom: 1px dashed transparent;
+    cursor: text;
+}
+.session-name:focus {
+    border-bottom-color: var(--secondary-accent);
+}
+
+.session-mode-tag {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+.session-mode-tag.arcade {
+    background: #ff6b35;
+    color: white;
+}
+.session-mode-tag.classic {
+    background: var(--primary-accent);
+    color: var(--text-color);
+}
+
+.session-card-meta {
+    display: flex;
+    justify-content: space-between;
+    color: #999;
+    font-size: 0.8rem;
+    margin-bottom: 4px;
+}
+.session-card-wins {
+    color: var(--text-color);
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+}
+
+.session-card-actions {
+    display: flex;
+    gap: 8px;
+}
+.session-load-btn, .session-delete-btn {
+    flex: 1;
+    padding: 6px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.session-load-btn {
+    background: var(--primary-accent);
+    color: var(--text-color);
+}
+.session-load-btn:hover:not(:disabled) { background: #1a5276; }
+.session-load-btn:disabled { opacity: 0.5; cursor: default; }
+.session-delete-btn {
+    background: #5a2d2d;
+    color: #ff8888;
+}
+.session-delete-btn:hover { background: #7a3d3d; }
