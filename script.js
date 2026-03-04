@@ -991,6 +991,663 @@ const achievements = [
     }
 ];
 
+// ==================== Arcade Multiplier Sets ====================
+// Each set has a check function that receives team data (same format as achievements)
+// and returns { matched: boolean, description: string }
+
+const arcadeMultiplierSets = [
+    // === Triple Points (3x) - "Against All Odds" ===
+    {
+        id: 'baby-brigade',
+        name: 'Baby Brigade',
+        emoji: '🍼',
+        multiplier: 3,
+        tier: 'against-all-odds',
+        flavor: 'Sending babies to war!',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => pokemonCategories.threeStageFirstEvolutions.includes(p)).length;
+            if (count >= 4) return { matched: true, description: `${count} first-evolution Pokémon` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'bottom-barrel',
+        name: 'Bottom Barrel',
+        emoji: '🪣',
+        multiplier: 3,
+        tier: 'against-all-odds',
+        flavor: 'Scraping the bottom!',
+        check: (team) => {
+            const avgBST = team.pokemon.reduce((sum, p) => sum + p.score, 0) / team.pokemon.length;
+            if (avgBST < 300) return { matched: true, description: `Avg BST: ${Math.round(avgBST)}` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'bug-catchers',
+        name: 'Bug Catchers',
+        emoji: '🐛',
+        multiplier: 3,
+        tier: 'against-all-odds',
+        flavor: 'Youngster Joey energy!',
+        check: (team) => {
+            const count = team.pokemon.filter(p => p.types && p.types.includes('bug')).length;
+            if (count >= 4) return { matched: true, description: `${count} Bug-type Pokémon` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'nfe-army',
+        name: 'NFE Army',
+        emoji: '🚫',
+        multiplier: 3,
+        tier: 'against-all-odds',
+        flavor: 'Refusing to evolve!',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const nfeCount = pokemon.filter(p => !pokemonCategories.finalEvolutions.includes(p) && !isLegendary(p)).length;
+            if (nfeCount >= 5) return { matched: true, description: `${nfeCount} not fully evolved` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'sunkern-special',
+        name: 'The Sunkern Special',
+        emoji: '🌻',
+        multiplier: 3,
+        tier: 'against-all-odds',
+        flavor: 'The greatest upset!',
+        check: (team, isWinner) => {
+            if (!isWinner) return { matched: false };
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            if (pokemon.includes('sunkern')) return { matched: true, description: 'Won with Sunkern!' };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'slowpoke-parade',
+        name: 'Slowpoke Parade',
+        emoji: '🦥',
+        multiplier: 3,
+        tier: 'against-all-odds',
+        flavor: '...eventually',
+        check: (team) => {
+            const slowCount = team.pokemon.filter(p => {
+                const speedStat = p.stats?.find(s => s.name === 'SPE');
+                return speedStat && speedStat.value < 30;
+            }).length;
+            if (slowCount >= 3) return { matched: true, description: `${slowCount} Pokémon with speed < 30` };
+            return { matched: false };
+        }
+    },
+
+    // === Double Points (2x) - "Thematic Mastery" ===
+    {
+        id: 'type-specialist',
+        name: 'Type Specialist',
+        emoji: '🏋️',
+        multiplier: 2,
+        tier: 'thematic-mastery',
+        flavor: 'Gym Leader energy!',
+        check: (team) => {
+            const typeCounts = {};
+            team.pokemon.forEach(p => {
+                if (p.types) {
+                    p.types.forEach(t => {
+                        typeCounts[t] = (typeCounts[t] || 0) + 1;
+                    });
+                }
+            });
+            const bestType = Object.entries(typeCounts).sort(([,a], [,b]) => b - a)[0];
+            if (bestType && bestType[1] >= 3) {
+                return { matched: true, description: `${bestType[1]} ${bestType[0].charAt(0).toUpperCase() + bestType[0].slice(1)}-type` };
+            }
+            return { matched: false };
+        }
+    },
+    {
+        id: 'eeveelution-squad',
+        name: 'Eeveelution Squad',
+        emoji: '🦊',
+        multiplier: 2,
+        tier: 'thematic-mastery',
+        flavor: "Gotta evolve 'em all!",
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => pokemonCategories.eeveelutions.includes(p)).length;
+            if (count >= 3) return { matched: true, description: `${count} Eeveelutions` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'fossil-expedition',
+        name: 'Fossil Expedition',
+        emoji: '🦴',
+        multiplier: 2,
+        tier: 'thematic-mastery',
+        flavor: 'Jurassic Park!',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => pokemonCategories.fossils.includes(p)).length;
+            if (count >= 3) return { matched: true, description: `${count} Fossil Pokémon` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'pretty-in-pink',
+        name: 'Pretty in Pink',
+        emoji: '🌸',
+        multiplier: 2,
+        tier: 'thematic-mastery',
+        flavor: 'Fabulous!',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => pokemonCategories.pinkPokemon.includes(p)).length;
+            if (count >= 3) return { matched: true, description: `${count} Pink Pokémon` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'kanto-starters-united',
+        name: 'Kanto Starters United',
+        emoji: '🎮',
+        multiplier: 2,
+        tier: 'thematic-mastery',
+        flavor: 'OG crew!',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const hasGrass = pokemonCategories.kantoStarterLines.grass.some(p => pokemon.includes(p));
+            const hasFire = pokemonCategories.kantoStarterLines.fire.some(p => pokemon.includes(p));
+            const hasWater = pokemonCategories.kantoStarterLines.water.some(p => pokemon.includes(p));
+            if (hasGrass && hasFire && hasWater) return { matched: true, description: 'All 3 Kanto starter lines' };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'rocket-roster',
+        name: 'Rocket Roster',
+        emoji: '🚀',
+        multiplier: 2,
+        tier: 'thematic-mastery',
+        flavor: 'Prepare for trouble!',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const rocketPokemon = [...pokemonCategories.teamRocketMeowth, ...pokemonCategories.teamRocketOther];
+            const count = pokemon.filter(p => rocketPokemon.includes(p)).length;
+            if (count >= 3) return { matched: true, description: `${count} Team Rocket Pokémon` };
+            return { matched: false };
+        }
+    },
+
+    // === Bonus Points (1.5x) - "Power Play" ===
+    {
+        id: 'legendary-assembly',
+        name: 'Legendary Assembly',
+        emoji: '⭐',
+        multiplier: 1.5,
+        tier: 'power-play',
+        flavor: 'Overkill much?',
+        check: (team) => {
+            const count = team.pokemon.filter(p => isLegendary(p.name)).length;
+            if (count >= 3) return { matched: true, description: `${count} Legendaries` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'final-form-force',
+        name: 'Final Form Force',
+        emoji: '💪',
+        multiplier: 1.5,
+        tier: 'power-play',
+        flavor: 'Maximum power!',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => pokemonCategories.finalEvolutions.includes(p)).length;
+            if (count >= 4) return { matched: true, description: `${count} fully evolved` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'dragons-den',
+        name: "Dragon's Den",
+        emoji: '🐉',
+        multiplier: 1.5,
+        tier: 'power-play',
+        flavor: 'Beast mode!',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => pokemonCategories.dragons.includes(p)).length;
+            if (count >= 3) return { matched: true, description: `${count} Dragon-type` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'bird-trio-complete',
+        name: 'Bird Trio Complete',
+        emoji: '🐦',
+        multiplier: 1.5,
+        tier: 'power-play',
+        flavor: "Collector's edition!",
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            if (pokemonCategories.legendaryBirds.every(b => pokemon.includes(b))) {
+                return { matched: true, description: 'Articuno + Zapdos + Moltres' };
+            }
+            return { matched: false };
+        }
+    },
+    {
+        id: 'beast-trio-complete',
+        name: 'Beast Trio Complete',
+        emoji: '🐾',
+        multiplier: 1.5,
+        tier: 'power-play',
+        flavor: "Johto's finest!",
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const beasts = ['raikou', 'entei', 'suicune'];
+            if (beasts.every(b => pokemon.includes(b))) {
+                return { matched: true, description: 'Raikou + Entei + Suicune' };
+            }
+            return { matched: false };
+        }
+    }
+];
+
+function detectArcadeMultipliers(teamData, isWinner) {
+    const matched = [];
+    // Enrich team data with types and stats from DOM if available
+    const enrichedTeam = enrichTeamDataForArcade(teamData);
+
+    arcadeMultiplierSets.forEach(set => {
+        const result = set.check(enrichedTeam, isWinner);
+        if (result.matched) {
+            matched.push({
+                id: set.id,
+                name: set.name,
+                emoji: set.emoji,
+                multiplier: set.multiplier,
+                tier: set.tier,
+                flavor: set.flavor,
+                description: result.description
+            });
+        }
+    });
+    return matched;
+}
+
+function calculateCombinedMultiplier(multipliers) {
+    if (multipliers.length === 0) return 1;
+    return multipliers.reduce((product, m) => product * m.multiplier, 1);
+}
+
+function enrichTeamDataForArcade(teamData) {
+    // The team data from getTeamData() only has name, score, sprite.
+    // We need types and individual stats for multiplier checks.
+    const enriched = { ...teamData };
+
+    // Find which team this data belongs to by matching team name
+    const team1Name = getTeamNameElement('team1')?.textContent;
+    const team2Name = getTeamNameElement('team2')?.textContent;
+    const actualTeamId = teamData.name === team1Name ? 'team1' : 'team2';
+    const actualGrid = document.getElementById(`${actualTeamId}-grid`);
+
+    if (actualGrid) {
+        enriched.pokemon = Array.from(actualGrid.children).map(card => {
+            const name = card.querySelector('.pokemon-name')?.textContent || '';
+            const score = parseInt(card.dataset.totalStats, 10) || 0;
+            const sprite = card.querySelector('.pokemon-sprite')?.src || null;
+
+            // Extract types from type bubbles
+            const typeBubbles = card.querySelectorAll('.type-bubble');
+            const types = Array.from(typeBubbles).map(b => b.textContent.toLowerCase().trim());
+
+            // Extract individual stats
+            const statBubbles = card.querySelectorAll('.stat-bubble');
+            const stats = Array.from(statBubbles).map(b => ({
+                name: b.querySelector('.stat-name')?.textContent || '',
+                value: parseInt(b.querySelector('.stat-value')?.textContent, 10) || 0
+            }));
+
+            return { name, score, sprite, types, stats };
+        });
+    }
+
+    return enriched;
+}
+
+function evaluateBet(teamId, detectedMultipliers) {
+    const bet = currentBets[teamId];
+    if (!bet) return 1; // No bet placed
+    const betMatched = detectedMultipliers.some(m => m.id === bet.categoryId);
+    return betMatched ? 1.5 : 0.75;
+}
+
+function showBetModal(teamId) {
+    if (isBattleConcluded) return; // Can't bet after battle
+
+    const categories = arcadeMultiplierSets.map(s => ({
+        id: s.id,
+        name: s.name,
+        emoji: s.emoji,
+        tier: s.tier
+    }));
+
+    const popup = createPopup('bet-modal', 'bet-modal-popup', `
+        <div class="bet-modal-content">
+            <h3>🎰 Place Your Bet</h3>
+            <p class="bet-modal-desc">Bet on a bonus you think your team qualifies for.<br>Correct: 1.5x bonus | Wrong: 0.75x penalty</p>
+            <div class="bet-categories">
+                ${categories.map(c => `
+                    <button class="bet-category-btn" data-id="${c.id}" data-name="${c.name}">
+                        ${c.emoji} ${c.name}
+                    </button>
+                `).join('')}
+            </div>
+            <button class="bet-cancel-btn">Cancel / No Bet</button>
+        </div>
+    `);
+
+    popup.querySelectorAll('.bet-category-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentBets[teamId] = {
+                categoryId: btn.dataset.id,
+                categoryName: btn.dataset.name
+            };
+            const betBtn = document.getElementById(`${teamId}-bet-btn`);
+            betBtn.textContent = '🎰 Bet Placed!';
+            betBtn.classList.add('bet-placed');
+            popup.classList.remove('show');
+            setTimeout(() => popup.remove(), 300);
+        });
+    });
+
+    popup.querySelector('.bet-cancel-btn').addEventListener('click', () => {
+        currentBets[teamId] = null;
+        const betBtn = document.getElementById(`${teamId}-bet-btn`);
+        betBtn.textContent = '🎰 Place Bet';
+        betBtn.classList.remove('bet-placed');
+        popup.classList.remove('show');
+        setTimeout(() => popup.remove(), 300);
+    });
+
+    setupPopupCloseHandlers(popup, '.bet-cancel-btn');
+}
+
+// ==================== Arcade Reveal Animation ====================
+
+async function showArcadeReveal(
+    team1Raw, team2Raw,
+    team1Multipliers, team2Multipliers,
+    team1Final, team2Final,
+    bets, team1BetMult, team2BetMult
+) {
+    return new Promise(async (resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'arcade-reveal-overlay';
+        overlay.innerHTML = `
+            <div class="arcade-reveal-container">
+                <div class="arcade-reveal-banner">ARCADE BATTLE!</div>
+                <div class="arcade-reveal-scores">
+                    <div class="arcade-reveal-team">
+                        <div class="arcade-reveal-team-name">${getTeamNameElement('team1').textContent}</div>
+                        <div class="arcade-reveal-raw-score">${team1Raw}</div>
+                        <div class="arcade-reveal-reels" id="arcade-reveal-t1-reels"></div>
+                        <div class="arcade-reveal-final-score" id="arcade-reveal-t1-final"></div>
+                    </div>
+                    <div class="arcade-reveal-vs">VS</div>
+                    <div class="arcade-reveal-team">
+                        <div class="arcade-reveal-team-name">${getTeamNameElement('team2').textContent}</div>
+                        <div class="arcade-reveal-raw-score">${team2Raw}</div>
+                        <div class="arcade-reveal-reels" id="arcade-reveal-t2-reels"></div>
+                        <div class="arcade-reveal-final-score" id="arcade-reveal-t2-final"></div>
+                    </div>
+                </div>
+                <div class="arcade-reveal-winner" id="arcade-reveal-winner"></div>
+                <div class="arcade-reveal-buttons">
+                    <button class="arcade-reveal-skip" id="arcade-reveal-skip">Skip</button>
+                    <button class="arcade-reveal-continue" id="arcade-reveal-continue">Continue</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        setTimeout(() => overlay.classList.add('show'), 10);
+
+        let skipped = false;
+        const skipBtn = document.getElementById('arcade-reveal-skip');
+        const continueBtn = document.getElementById('arcade-reveal-continue');
+
+        const cleanup = () => {
+            overlay.classList.remove('show');
+            setTimeout(() => overlay.remove(), 300);
+            resolve();
+        };
+
+        const showContinue = () => {
+            skipBtn.style.display = 'none';
+            continueBtn.classList.add('visible');
+        };
+
+        continueBtn.addEventListener('click', cleanup);
+
+        // Build dummy badge pool (all multiplier sets, for random reel items)
+        const dummyPool = arcadeMultiplierSets.map(s => ({
+            name: s.name, emoji: s.emoji, multiplier: s.multiplier
+        }));
+
+        function shuffleArray(arr) {
+            const a = [...arr];
+            for (let i = a.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [a[i], a[j]] = [a[j], a[i]];
+            }
+            return a;
+        }
+
+        function buildBadgeHTML(m, extraClass = '') {
+            return `<div class="arcade-multiplier-badge ${extraClass}">${m.emoji} ${m.name} <span class="multiplier-value">${m.multiplier}x</span></div>`;
+        }
+
+        // Spin a single reel: creates window + strip, animates, resolves when landed
+        function spinReel(container, realBadge, isBet = false) {
+            return new Promise((resolveReel) => {
+                const window = document.createElement('div');
+                window.className = 'arcade-reel-window';
+                const strip = document.createElement('div');
+                strip.className = 'arcade-reel-strip';
+
+                // Pick ~8 random dummies (excluding the real one by id)
+                const dummies = shuffleArray(
+                    dummyPool.filter(d => d.name !== realBadge.name)
+                ).slice(0, 8);
+
+                // Build strip: dummies first, real badge at bottom
+                dummies.forEach(d => {
+                    strip.innerHTML += buildBadgeHTML(d);
+                });
+
+                const betClass = isBet
+                    ? ` bet ${realBadge.won ? 'won' : 'lost'}`
+                    : '';
+                strip.innerHTML += buildBadgeHTML(realBadge, `real-badge${betClass}`);
+
+                window.appendChild(strip);
+                container.appendChild(window);
+
+                // Badge height = 50px, total items = dummies.length + 1
+                const totalItems = dummies.length + 1;
+                const badgeH = 50;
+                // Offset to show last badge centered in window (window is 54px)
+                const targetY = -((totalItems - 1) * badgeH) + 2;
+
+                // Start spinning after a frame
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        strip.style.transform = `translateY(${targetY}px)`;
+                    });
+                });
+
+                // When transition ends, mark as landed and glow
+                strip.addEventListener('transitionend', () => {
+                    window.classList.add('landed');
+                    const realEl = strip.querySelector('.real-badge');
+                    if (realEl) realEl.classList.add('glow');
+                    resolveReel();
+                }, { once: true });
+            });
+        }
+
+        // Instant reveal for skip: show all badges without animation
+        function revealAllInstant(multipliers, prefix, betInfo) {
+            const container = document.getElementById(`arcade-reveal-${prefix}-reels`);
+            container.innerHTML = '';
+            if (multipliers.length === 0 && !betInfo) {
+                container.innerHTML = '<div class="arcade-no-bonus">No bonuses</div>';
+                return;
+            }
+            multipliers.forEach(m => {
+                const window = document.createElement('div');
+                window.className = 'arcade-reel-window landed';
+                window.innerHTML = `<div class="arcade-reel-strip"><div class="arcade-multiplier-badge real-badge glow">${m.emoji} ${m.name} <span class="multiplier-value">${m.multiplier}x</span></div></div>`;
+                container.appendChild(window);
+            });
+            if (betInfo) {
+                const correct = betInfo.mult === 1.5;
+                const window = document.createElement('div');
+                window.className = 'arcade-reel-window landed';
+                window.innerHTML = `<div class="arcade-reel-strip"><div class="arcade-multiplier-badge real-badge bet ${correct ? 'won' : 'lost'} glow">🎰 Bet: ${betInfo.name} <span class="multiplier-value">${correct ? '✓ 1.5x' : '✗ 0.75x'}</span></div></div>`;
+                container.appendChild(window);
+            }
+        }
+
+        function showFinalScoresAndWinner() {
+            document.getElementById('arcade-reveal-t1-final').textContent = team1Final;
+            document.getElementById('arcade-reveal-t2-final').textContent = team2Final;
+
+            const winnerEl = document.getElementById('arcade-reveal-winner');
+            if (team1Final > team2Final) {
+                winnerEl.textContent = `${getTeamNameElement('team1').textContent} WINS!`;
+                winnerEl.className = 'arcade-reveal-winner show burst';
+            } else if (team2Final > team1Final) {
+                winnerEl.textContent = `${getTeamNameElement('team2').textContent} WINS!`;
+                winnerEl.className = 'arcade-reveal-winner show burst';
+            } else {
+                winnerEl.textContent = "IT'S A TIE!";
+                winnerEl.className = 'arcade-reveal-winner show tie burst';
+            }
+        }
+
+        skipBtn.addEventListener('click', () => {
+            skipped = true;
+            const t1Bet = bets.team1 ? { name: bets.team1.categoryName, mult: team1BetMult } : null;
+            const t2Bet = bets.team2 ? { name: bets.team2.categoryName, mult: team2BetMult } : null;
+            revealAllInstant(team1Multipliers, 't1', t1Bet);
+            revealAllInstant(team2Multipliers, 't2', t2Bet);
+            showFinalScoresAndWinner();
+            showContinue();
+        });
+
+        // Animated reveal sequence with slot machine reels
+        async function animateReveal() {
+            // Spin team 1 multipliers
+            const t1Container = document.getElementById('arcade-reveal-t1-reels');
+            for (const m of team1Multipliers) {
+                if (skipped) return;
+                await spinReel(t1Container, m);
+                if (skipped) return;
+                await new Promise(r => setTimeout(r, 300));
+            }
+
+            // Spin team 2 multipliers
+            const t2Container = document.getElementById('arcade-reveal-t2-reels');
+            for (const m of team2Multipliers) {
+                if (skipped) return;
+                await spinReel(t2Container, m);
+                if (skipped) return;
+                await new Promise(r => setTimeout(r, 300));
+            }
+
+            if (skipped) return;
+
+            // Spin bet results as reels too
+            if (bets.team1) {
+                const correct = team1BetMult === 1.5;
+                await spinReel(t1Container, {
+                    emoji: '🎰', name: `Bet: ${bets.team1.categoryName}`,
+                    multiplier: correct ? '✓ 1.5' : '✗ 0.75',
+                    won: correct
+                }, true);
+                if (skipped) return;
+                await new Promise(r => setTimeout(r, 300));
+            }
+            if (bets.team2) {
+                const correct = team2BetMult === 1.5;
+                await spinReel(t2Container, {
+                    emoji: '🎰', name: `Bet: ${bets.team2.categoryName}`,
+                    multiplier: correct ? '✓ 1.5' : '✗ 0.75',
+                    won: correct
+                }, true);
+                if (skipped) return;
+                await new Promise(r => setTimeout(r, 300));
+            }
+
+            if (skipped) return;
+
+            // Show final scores and winner
+            showFinalScoresAndWinner();
+            showContinue();
+        }
+
+        const hasAny = team1Multipliers.length > 0 || team2Multipliers.length > 0 || bets.team1 || bets.team2;
+
+        if (!hasAny) {
+            // No bonuses: brief reel spin landing on "No Bonuses"
+            const t1Container = document.getElementById('arcade-reveal-t1-reels');
+            const t2Container = document.getElementById('arcade-reveal-t2-reels');
+
+            // Build a small reel that lands on "No Bonuses"
+            function spinNoBonus(container) {
+                return new Promise((res) => {
+                    const window = document.createElement('div');
+                    window.className = 'arcade-reel-window';
+                    const strip = document.createElement('div');
+                    strip.className = 'arcade-reel-strip';
+
+                    // 4 random dummies + "No Bonuses" at end
+                    const dummies = shuffleArray(dummyPool).slice(0, 4);
+                    dummies.forEach(d => {
+                        strip.innerHTML += buildBadgeHTML(d);
+                    });
+                    strip.innerHTML += '<div class="arcade-multiplier-badge real-badge" style="color:#666;font-style:italic">No Bonuses</div>';
+
+                    window.appendChild(strip);
+                    container.appendChild(window);
+
+                    const targetY = -(4 * 50) + 2;
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            strip.style.transform = `translateY(${targetY}px)`;
+                        });
+                    });
+
+                    strip.addEventListener('transitionend', () => {
+                        window.classList.add('landed');
+                        res();
+                    }, { once: true });
+                });
+            }
+
+            await Promise.all([spinNoBonus(t1Container), spinNoBonus(t2Container)]);
+            await new Promise(r => setTimeout(r, 400));
+            showFinalScoresAndWinner();
+            showContinue();
+        } else {
+            animateReveal();
+        }
+    });
+}
+
 // Detect achievements for a team
 function detectAchievements(teamData, isWinner, isTie = false) {
     const earned = [];
@@ -1897,31 +2554,114 @@ async function determineWinner() {
     team1Text.textContent = '';
     team2Text.textContent = '';
 
-    // A short delay for suspense before showing the result
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    let team1IsWinner = false;
-    let team2IsWinner = false;
-
-    if (team1Score > team2Score) {
-        team1.classList.add('winner');
-        team1Text.textContent = 'Winner!';
-        team1IsWinner = true;
-    } else if (team2Score > team1Score) {
-        team2.classList.add('winner');
-        team2Text.textContent = 'Winner!';
-        team2IsWinner = true;
-    } else {
-        team1.classList.add('tie');
-        team2.classList.add('tie');
-        team1Text.textContent = 'Tie!';
-        team2Text.textContent = 'Tie!';
-    }
-
-    // Detect and display achievements
     const team1Data = getTeamData('team1');
     const team2Data = getTeamData('team2');
-    const isTie = !team1IsWinner && !team2IsWinner;
+
+    if (arcadeMode) {
+        // Arcade mode: detect multipliers, then run slot machine reveal
+        const team1MultipliersBase = detectArcadeMultipliers(team1Data, false);
+        const team2MultipliersBase = detectArcadeMultipliers(team2Data, false);
+
+        const team1Combined = calculateCombinedMultiplier(team1MultipliersBase);
+        const team2Combined = calculateCombinedMultiplier(team2MultipliersBase);
+
+        // Apply bets
+        const team1BetMultiplier = evaluateBet('team1', team1MultipliersBase);
+        const team2BetMultiplier = evaluateBet('team2', team2MultipliersBase);
+
+        const team1Adjusted = Math.round(team1Score * team1Combined * team1BetMultiplier);
+        const team2Adjusted = Math.round(team2Score * team2Combined * team2BetMultiplier);
+
+        // Determine preliminary winner from adjusted scores
+        let prelimWinner = null;
+        if (team1Adjusted > team2Adjusted) prelimWinner = 'team1';
+        else if (team2Adjusted > team1Adjusted) prelimWinner = 'team2';
+
+        // Re-detect with winner info for winner-dependent multipliers (e.g., Sunkern Special)
+        const team1IsWinner = prelimWinner === 'team1';
+        const team2IsWinner = prelimWinner === 'team2';
+        const team1MultipliersFinal = detectArcadeMultipliers(team1Data, team1IsWinner);
+        const team2MultipliersFinal = detectArcadeMultipliers(team2Data, team2IsWinner);
+
+        const team1CombinedFinal = calculateCombinedMultiplier(team1MultipliersFinal);
+        const team2CombinedFinal = calculateCombinedMultiplier(team2MultipliersFinal);
+
+        const team1AdjustedFinal = Math.round(team1Score * team1CombinedFinal * team1BetMultiplier);
+        const team2AdjustedFinal = Math.round(team2Score * team2CombinedFinal * team2BetMultiplier);
+
+        // Store arcade data for saving later
+        window._arcadeBattleData = {
+            team1: {
+                rawScore: team1Score,
+                multipliers: team1MultipliersFinal,
+                combinedMultiplier: team1CombinedFinal,
+                betMultiplier: team1BetMultiplier,
+                adjustedScore: team1AdjustedFinal,
+                bet: currentBets.team1
+            },
+            team2: {
+                rawScore: team2Score,
+                multipliers: team2MultipliersFinal,
+                combinedMultiplier: team2CombinedFinal,
+                betMultiplier: team2BetMultiplier,
+                adjustedScore: team2AdjustedFinal,
+                bet: currentBets.team2
+            }
+        };
+
+        // Run the slot machine reveal animation
+        await showArcadeReveal(
+            team1Score, team2Score,
+            team1MultipliersFinal, team2MultipliersFinal,
+            team1AdjustedFinal, team2AdjustedFinal,
+            currentBets,
+            team1BetMultiplier, team2BetMultiplier
+        );
+
+        // After animation, determine actual winner
+        if (team1AdjustedFinal > team2AdjustedFinal) {
+            team1.classList.add('winner');
+            team1Text.textContent = `Winner! (${team1AdjustedFinal})`;
+            window._arcadeBattleData.winner = 'team1';
+        } else if (team2AdjustedFinal > team1AdjustedFinal) {
+            team2.classList.add('winner');
+            team2Text.textContent = `Winner! (${team2AdjustedFinal})`;
+            window._arcadeBattleData.winner = 'team2';
+        } else {
+            team1.classList.add('tie');
+            team2.classList.add('tie');
+            team1Text.textContent = 'Tie!';
+            team2Text.textContent = 'Tie!';
+            window._arcadeBattleData.winner = 'tie';
+        }
+
+        // Reset bets for next battle
+        currentBets = { team1: null, team2: null };
+
+    } else {
+        // Classic mode: unchanged behavior
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        if (team1Score > team2Score) {
+            team1.classList.add('winner');
+            team1Text.textContent = 'Winner!';
+        } else if (team2Score > team1Score) {
+            team2.classList.add('winner');
+            team2Text.textContent = 'Winner!';
+        } else {
+            team1.classList.add('tie');
+            team2.classList.add('tie');
+            team1Text.textContent = 'Tie!';
+            team2Text.textContent = 'Tie!';
+        }
+
+        window._arcadeBattleData = null;
+    }
+
+    // Detect and display achievements (same for both modes)
+    const isTie = !team1.classList.contains('winner') && !team2.classList.contains('winner') && team1.classList.contains('tie');
+    const team1IsWinner = team1.classList.contains('winner');
+    const team2IsWinner = team2.classList.contains('winner');
     currentBattleAchievements.team1 = detectAchievements(team1Data, team1IsWinner, isTie);
     currentBattleAchievements.team2 = detectAchievements(team2Data, team2IsWinner, isTie);
 
@@ -1978,12 +2718,34 @@ async function saveCurrentBattle() {
     const team2Score = parseInt(team2Data.score);
 
     let winner;
-    if (team1Score > team2Score) winner = 'team1';
-    else if (team2Score > team1Score) winner = 'team2';
-    else winner = 'tie';
+    if (arcadeMode && window._arcadeBattleData) {
+        winner = window._arcadeBattleData.winner;
+    } else {
+        if (team1Score > team2Score) winner = 'team1';
+        else if (team2Score > team1Score) winner = 'team2';
+        else winner = 'tie';
+    }
 
     // Detect cross-team achievements for saving
     const crossTeamAchievements = detectCrossTeamAchievements(team1Data, team2Data);
+
+    // Arcade mode: detect streak-breaking bonus
+    let streakBreakData = null;
+    if (arcadeMode && winner !== 'tie') {
+        const loserTeamId = winner === 'team1' ? 'team2' : 'team1';
+        const loserName = loserTeamId === 'team1' ? team1Data.name : team2Data.name;
+        const loserStreak = getStreakBeforeSave(loserName);
+        const bonusWins = calculateStreakBreakBonus(loserStreak);
+        if (bonusWins > 0) {
+            streakBreakData = { broken: loserStreak, bonusWins: bonusWins };
+        }
+    }
+
+    // Attach streak break to arcade data if present
+    const arcadeData = window._arcadeBattleData || null;
+    if (arcadeData && streakBreakData) {
+        arcadeData.streakBreak = streakBreakData;
+    }
 
     // Detect GOAT/WOAT achievements (needs full history including this battle)
     const historyBeforeSave = JSON.parse(localStorage.getItem('battleHistory')) || [];
@@ -1994,6 +2756,8 @@ async function saveCurrentBattle() {
         team1: team1Data,
         team2: team2Data,
         winner: winner,
+        mode: arcadeMode ? 'arcade' : 'classic',
+        arcade: arcadeData,
         date: new Date().toISOString(),
         achievements: {
             team1: [...currentBattleAchievements.team1, ...goatWoatAchievements.team1],
@@ -2017,6 +2781,7 @@ async function saveCurrentBattle() {
     const history = historyBeforeSave;
     history.push(result);
     localStorage.setItem('battleHistory', JSON.stringify(history));
+    window._arcadeBattleData = null;
 
     loadHistory(true); // Reload to show the new entry and check for streak breaks
 
@@ -2092,9 +2857,45 @@ function renderHistoryEntry(result) {
         }
     }
 
+    // Arcade mode display
+    let arcadeBadgeHTML = '';
+    let arcadeDetailsHTML = '';
+    if (result.mode === 'arcade' && result.arcade) {
+        arcadeBadgeHTML = '<span class="history-arcade-tag">ARCADE</span>';
+
+        const formatMultipliers = (teamArcade) => {
+            if (!teamArcade?.multipliers?.length) return '<span class="no-multipliers">No bonuses</span>';
+            return teamArcade.multipliers.map(m =>
+                `<span class="history-multiplier-badge">${m.emoji} ${m.name} ${m.multiplier}x</span>`
+            ).join(' ');
+        };
+
+        const t1 = result.arcade.team1;
+        const t2 = result.arcade.team2;
+        const streakHTML = result.arcade.streakBreak
+            ? `<div class="history-streak-break">⚡ Streak Breaker! ${result.arcade.streakBreak.broken}-streak broken, +${result.arcade.streakBreak.bonusWins} bonus wins</div>`
+            : '';
+
+        arcadeDetailsHTML = `
+            <div class="history-arcade-details">
+                <div class="history-arcade-team">
+                    <span class="arcade-detail-label">${result.team1.name}:</span>
+                    ${formatMultipliers(t1)}
+                    ${t1?.combinedMultiplier > 1 ? `<span class="arcade-total-mult">${t1.combinedMultiplier}x = ${t1.adjustedScore}</span>` : ''}
+                </div>
+                <div class="history-arcade-team">
+                    <span class="arcade-detail-label">${result.team2.name}:</span>
+                    ${formatMultipliers(t2)}
+                    ${t2?.combinedMultiplier > 1 ? `<span class="arcade-total-mult">${t2.combinedMultiplier}x = ${t2.adjustedScore}</span>` : ''}
+                </div>
+                ${streakHTML}
+            </div>
+        `;
+    }
+
     entry.innerHTML = `
         <button class="delete-history-btn" title="Delete this entry">&times;</button>
-        <div class="history-meta"><span>${new Date(result.date).toLocaleString()}</span></div>
+        <div class="history-meta"><span>${new Date(result.date).toLocaleString()}</span> ${arcadeBadgeHTML}</div>
         <div class="history-team-compact">
             <h3>${result.team1.name} (${result.team1.score})${team1WinnerTag}${tieTag}</h3>
             <div class="history-pokemon-list">${team1PokemonList}</div>
@@ -2103,6 +2904,7 @@ function renderHistoryEntry(result) {
             <h3>${result.team2.name} (${result.team2.score})${team2WinnerTag}${tieTag}</h3>
             <div class="history-pokemon-list">${team2PokemonList}</div>
         </div>
+        ${arcadeDetailsHTML}
         ${achievementBadgesHTML}
         <span class="load-hint">Click to Load Battle</span>`;
 
@@ -2343,11 +3145,12 @@ function updateWinTally() {
     const history = fullHistory; // Use the global fullHistory which is already loaded
     const tally = {};
 
-    // Calculate total wins
+    // Calculate total wins (including arcade streak-break bonus wins)
     history.forEach(result => {
         if (result.winner === 'tie') return;
         const winnerName = result[result.winner].name;
-        tally[winnerName] = (tally[winnerName] || 0) + 1;
+        const bonusWins = (result.arcade?.streakBreak?.bonusWins) || 0;
+        tally[winnerName] = (tally[winnerName] || 0) + 1 + bonusWins;
     });
 
     // Calculate current streaks
@@ -2440,15 +3243,17 @@ function checkForStreakBreak() {
 
 function showStreakBreakAchievement(teamName, streakCount) {
     const achievementContainer = document.getElementById('streak-achievement');
+    const bonusWins = arcadeMode ? calculateStreakBreakBonus(streakCount) : 0;
+    const bonusText = bonusWins > 0 ? `<br><span class="streak-bonus-wins">⚡ STREAK BREAKER! +${bonusWins} bonus win${bonusWins > 1 ? 's' : ''}!</span>` : '';
+
     achievementContainer.innerHTML = `
         <div class="streak-break-notification">
             <button class="streak-close-btn" title="Dismiss">&times;</button>
-            💔 <strong>${teamName}</strong>'s ${streakCount}-win streak has ended!
+            💔 <strong>${teamName}</strong>'s ${streakCount}-win streak has ended!${bonusText}
         </div>
     `;
     achievementContainer.style.display = 'block';
 
-    // Add close button handler
     achievementContainer.querySelector('.streak-close-btn').addEventListener('click', () => {
         achievementContainer.style.display = 'none';
     });
@@ -2459,6 +3264,21 @@ function hideStreakAchievement() {
     if (achievementContainer) {
         achievementContainer.style.display = 'none';
     }
+}
+
+function updateBetButtonsVisibility() {
+    ['team1', 'team2'].forEach(teamId => {
+        const btn = document.getElementById(`${teamId}-bet-btn`);
+        if (btn) {
+            btn.style.display = arcadeMode ? '' : 'none';
+            // Reset bet indicators when turning off arcade
+            if (!arcadeMode) {
+                currentBets[teamId] = null;
+                btn.textContent = '🎰 Place Bet';
+                btn.classList.remove('bet-placed');
+            }
+        }
+    });
 }
 
 // ==================== Session Management ====================
@@ -2557,6 +3377,29 @@ function renameSession(sessionId, newName) {
         session.name = newName;
         saveSessions(sessions);
     }
+}
+
+function calculateStreakBreakBonus(streakBroken) {
+    if (streakBroken >= 7) return 3;
+    if (streakBroken >= 5) return 2;
+    if (streakBroken >= 3) return 1;
+    return 0;
+}
+
+function getStreakBeforeSave(loserTeamName) {
+    // Calculate the losing team's streak from history (before this battle is saved)
+    const history = JSON.parse(localStorage.getItem('battleHistory')) || [];
+    const sorted = [...history].sort((a, b) => b.id - a.id);
+    let streak = 0;
+    for (const result of sorted) {
+        const wasInMatch = result.team1.name === loserTeamName || result.team2.name === loserTeamName;
+        if (!wasInMatch) continue;
+        const didWin = (result.winner === 'team1' && result.team1.name === loserTeamName) ||
+                       (result.winner === 'team2' && result.team2.name === loserTeamName);
+        if (didWin) streak++;
+        else break;
+    }
+    return streak;
 }
 
 function renderSessionsList() {
@@ -2829,6 +3672,19 @@ async function loadAllPokemonNames() {
 loadAllPokemonNames();
 
 document.addEventListener("DOMContentLoaded", () => {
+    // Initialize arcade mode from localStorage
+    arcadeMode = localStorage.getItem('arcadeMode') === 'true';
+    const arcadeToggle = document.getElementById('arcade-mode-toggle');
+    arcadeToggle.checked = arcadeMode;
+    document.body.classList.toggle('arcade-active', arcadeMode);
+
+    arcadeToggle.addEventListener('change', () => {
+        arcadeMode = arcadeToggle.checked;
+        localStorage.setItem('arcadeMode', arcadeMode);
+        document.body.classList.toggle('arcade-active', arcadeMode);
+        updateBetButtonsVisibility();
+    });
+
     // Create and inject save button and history section
     const saveButtonContainer = document.createElement('div');
     saveButtonContainer.className = 'save-btn-container';
@@ -2944,6 +3800,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const inputs = document.querySelectorAll(".poke-input");
     inputs.forEach(input => setupAutocomplete(input));
+
+    // Add bet buttons for arcade mode
+    ['team1', 'team2'].forEach(teamId => {
+        const team = document.getElementById(teamId);
+        const buttonContainer = team.querySelector('.button-container');
+        const betBtn = document.createElement('button');
+        betBtn.className = 'bet-btn';
+        betBtn.id = `${teamId}-bet-btn`;
+        betBtn.textContent = '🎰 Place Bet';
+        betBtn.style.display = arcadeMode ? '' : 'none';
+        betBtn.addEventListener('click', () => showBetModal(teamId));
+        buttonContainer.appendChild(betBtn);
+    });
 
     document.querySelector('.teams').addEventListener('click', handleTeamNameClick);
 
