@@ -1660,57 +1660,84 @@ body.arcade-active h1 {
     min-height: 40px;
 }
 
-.arcade-reel-window {
-    height: 54px;
-    overflow: hidden;
-    border: 2px solid #555;
-    border-radius: 8px;
-    background: var(--dark-bg);
-    position: relative;
-    box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
-}
-.arcade-reel-window.landed {
-    border-color: #ff6b35;
-    box-shadow: inset 0 2px 8px rgba(0,0,0,0.5), 0 0 10px rgba(255, 107, 53, 0.4);
+.arcade-reel-group {
+    margin-bottom: 12px;
+    text-align: center;
 }
 
-.arcade-reel-strip {
+.arcade-reel-sprites {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+
+.arcade-reel-sprite {
     display: flex;
     flex-direction: column;
-    transition: transform 1.4s cubic-bezier(0.15, 0.85, 0.35, 1);
+    align-items: center;
+    opacity: 0;
+    transform: translateY(-40px);
+    transition: opacity 0.3s ease-out, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.arcade-reel-sprite.landed {
+    opacity: 1;
+    transform: translateY(0);
+}
+.arcade-reel-sprite img {
+    width: 56px;
+    height: 56px;
+    image-rendering: pixelated;
+    filter: drop-shadow(0 2px 6px rgba(255, 107, 53, 0.4));
+}
+.arcade-sprite-name {
+    font-size: 0.65rem;
+    color: #aaa;
+    text-transform: capitalize;
+    margin-top: 2px;
+    max-width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.arcade-reel-badge {
+    opacity: 0;
+    transform: scale(0.5);
+    transition: opacity 0.3s ease-out, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.arcade-reel-badge.revealed {
+    opacity: 1;
+    transform: scale(1);
 }
 
 .arcade-multiplier-badge {
-    height: 50px;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 4px 20px;
+    padding: 6px 16px;
     font-size: 1rem;
     color: var(--text-color);
     white-space: nowrap;
-    box-sizing: border-box;
-    flex-shrink: 0;
-}
-.arcade-multiplier-badge.real-badge {
+    border-radius: 8px;
     background: rgba(255, 107, 53, 0.08);
 }
+.arcade-multiplier-badge.real-badge {
+    background: rgba(255, 107, 53, 0.12);
+    border: 1px solid rgba(255, 107, 53, 0.3);
+}
 .arcade-multiplier-badge.real-badge.glow {
-    background: rgba(255, 107, 53, 0.15);
     animation: arcade-badge-glow 0.8s ease-out;
 }
 @keyframes arcade-badge-glow {
-    0%   { background: rgba(255, 215, 0, 0.4); }
-    100% { background: rgba(255, 107, 53, 0.15); }
+    0%   { background: rgba(255, 215, 0, 0.4); box-shadow: 0 0 15px rgba(255, 215, 0, 0.5); }
+    100% { background: rgba(255, 107, 53, 0.12); box-shadow: none; }
 }
 
-.arcade-multiplier-badge.bet.won {
-    color: #4caf50;
-}
-.arcade-multiplier-badge.bet.lost {
-    color: #f44336;
-}
+.arcade-multiplier-badge.bet.won { color: #4caf50; }
+.arcade-multiplier-badge.bet.lost { color: #f44336; }
 
 .multiplier-value {
     font-weight: 700;
@@ -1784,6 +1811,29 @@ body.arcade-active h1 {
 @keyframes arcade-continue-pop {
     from { transform: scale(0.8); opacity: 0; }
     to   { transform: scale(1); opacity: 1; }
+}
+
+.arcade-bonus-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    justify-content: center;
+}
+.arcade-bonus-tag {
+    background: rgba(255, 107, 53, 0.12);
+    border: 1px solid rgba(255, 107, 53, 0.4);
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 0.78rem;
+    color: #ff6b35;
+    cursor: default;
+    white-space: nowrap;
+}
+.arcade-bonus-tag.ditto {
+    background: rgba(168, 128, 255, 0.12);
+    border-color: rgba(168, 128, 255, 0.5);
+    color: #a880ff;
 }
 
 .streak-bonus-wins {

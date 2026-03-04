@@ -435,6 +435,10 @@ function resetBattleState() {
         saveBtn.style.display = 'none';
     }
     isBattleConcluded = false;
+
+    // Remove arcade bonus indicators
+    document.getElementById('team1-arcade-bonuses')?.remove();
+    document.getElementById('team2-arcade-bonuses')?.remove();
 }
 
 // Comprehensive Pokemon name variants map
@@ -660,7 +664,19 @@ const pokemonCategories = {
         'sharpedo', 'wailord', 'camerupt', 'grumpig', 'flygon', 'cacturne', 'altaria', 'whiscash',
         'crawdaunt', 'claydol', 'cradily', 'armaldo', 'milotic', 'banette', 'dusknoir', 'chimecho',
         'glalie', 'froslass', 'walrein', 'huntail', 'gorebyss', 'salamence', 'metagross'
-    ]
+    ],
+    cocoons: ['metapod', 'kakuna', 'silcoon', 'cascoon', 'spewpa'],
+    pikaclones: ['pichu', 'pikachu', 'raichu', 'plusle', 'minun', 'pachirisu', 'emolga', 'dedenne', 'togedemaru', 'morpeko'],
+    catPokemon: ['meowth', 'persian', 'skitty', 'delcatty', 'glameow', 'purugly', 'purrloin', 'liepard',
+        'espurr', 'meowstic', 'shinx', 'luxio', 'luxray', 'litten', 'torracat', 'incineroar',
+        'sprigatito', 'floragato', 'meowscarada', 'espeon'],
+    dogPokemon: ['growlithe', 'arcanine', 'snubbull', 'granbull', 'houndour', 'houndoom', 'poochyena',
+        'mightyena', 'electrike', 'manectric', 'lillipup', 'herdier', 'stoutland', 'rockruff',
+        'lycanroc', 'yamper', 'boltund', 'fidough', 'dachsbun', 'greavard', 'houndstone',
+        'riolu', 'lucario', 'maschiff', 'mabosstiff'],
+    eggPokemon: ['togepi', 'togetic', 'togekiss', 'chansey', 'blissey', 'happiny', 'exeggcute', 'exeggutor'],
+    pseudoLegendaries: ['dragonite', 'tyranitar', 'salamence', 'metagross', 'garchomp', 'hydreigon',
+        'goodra', 'kommo-o', 'dragapult', 'baxcalibur']
 };
 
 // Achievement Definitions
@@ -995,6 +1011,11 @@ const achievements = [
 // Each set has a check function that receives team data (same format as achievements)
 // and returns { matched: boolean, description: string }
 
+// Helper: matches a pokemon name against a list, including form variants (e.g. "meowth-alola" matches "meowth")
+function matchesAnyBase(name, baseList) {
+    return baseList.some(base => name === base || name.startsWith(base + '-'));
+}
+
 const arcadeMultiplierSets = [
     // === Triple Points (3x) - "Against All Odds" ===
     {
@@ -1073,11 +1094,9 @@ const arcadeMultiplierSets = [
         tier: 'against-all-odds',
         flavor: '...eventually',
         check: (team) => {
-            const slowCount = team.pokemon.filter(p => {
-                const speedStat = p.stats?.find(s => s.name === 'SPE');
-                return speedStat && speedStat.value < 30;
-            }).length;
-            if (slowCount >= 3) return { matched: true, description: `${slowCount} Pokémon with speed < 30` };
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => matchesAnyBase(p, pokemonCategories.slowpokes)).length;
+            if (count >= 2) return { matched: true, description: `${count} Slowpoke family` };
             return { matched: false };
         }
     },
@@ -1252,8 +1271,221 @@ const arcadeMultiplierSets = [
             }
             return { matched: false };
         }
+    },
+
+    // === Additional Multipliers ===
+
+    // 3x - Against All Odds
+    {
+        id: 'cocoon-chaos',
+        name: 'Cocoon Chaos',
+        emoji: '🪺',
+        multiplier: 3,
+        tier: 'against-all-odds',
+        flavor: 'It used Harden!',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => pokemonCategories.cocoons.includes(p)).length;
+            if (count >= 2) return { matched: true, description: `${count} cocoon Pokémon` };
+            return { matched: false };
+        }
+    },
+
+    // 2x - Thematic Mastery
+    {
+        id: 'pikaclone-parade',
+        name: 'Pikaclone Parade',
+        emoji: '⚡',
+        multiplier: 2,
+        tier: 'thematic-mastery',
+        flavor: 'Shocking resemblance!',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => matchesAnyBase(p, pokemonCategories.pikaclones)).length;
+            if (count >= 2) return { matched: true, description: `${count} Pikaclones` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'cat-cafe',
+        name: 'Cat Cafe',
+        emoji: '🐱',
+        multiplier: 2,
+        tier: 'thematic-mastery',
+        flavor: 'Meow meow meow!',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => matchesAnyBase(p, pokemonCategories.catPokemon)).length;
+            if (count >= 3) return { matched: true, description: `${count} cat Pokémon` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'good-boys',
+        name: 'Good Boys',
+        emoji: '🐕',
+        multiplier: 2,
+        tier: 'thematic-mastery',
+        flavor: "Who's a good team?",
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => matchesAnyBase(p, pokemonCategories.dogPokemon)).length;
+            if (count >= 3) return { matched: true, description: `${count} dog Pokémon` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'egg-gang',
+        name: 'Egg Gang',
+        emoji: '🥚',
+        multiplier: 2,
+        tier: 'thematic-mastery',
+        flavor: 'Which came first?',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => matchesAnyBase(p, pokemonCategories.eggPokemon)).length;
+            if (count >= 2) return { matched: true, description: `${count} egg Pokémon` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'gym-leader',
+        name: 'Gym Leader',
+        emoji: '🏟️',
+        multiplier: 2,
+        tier: 'thematic-mastery',
+        flavor: 'One type to rule them all!',
+        check: (team) => {
+            const typeCounts = {};
+            team.pokemon.forEach(p => {
+                if (p.types) {
+                    p.types.forEach(t => {
+                        typeCounts[t] = (typeCounts[t] || 0) + 1;
+                    });
+                }
+            });
+            const bestType = Object.entries(typeCounts).sort(([,a], [,b]) => b - a)[0];
+            if (bestType && bestType[1] >= 5) {
+                return { matched: true, description: `${bestType[1]} ${bestType[0].charAt(0).toUpperCase() + bestType[0].slice(1)}-type` };
+            }
+            return { matched: false };
+        }
+    },
+
+    // 1.5x - Power Play
+    {
+        id: 'pseudo-legendary-club',
+        name: 'Pseudo-Legendary Club',
+        emoji: '🏰',
+        multiplier: 1.5,
+        tier: 'power-play',
+        flavor: 'Almost legendary!',
+        check: (team) => {
+            const pokemon = team.pokemon.map(p => p.name.toLowerCase());
+            const count = pokemon.filter(p => matchesAnyBase(p, pokemonCategories.pseudoLegendaries)).length;
+            if (count >= 2) return { matched: true, description: `${count} pseudo-legendaries` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'speed-demons',
+        name: 'Speed Demons',
+        emoji: '💨',
+        multiplier: 1.5,
+        tier: 'power-play',
+        flavor: 'Gotta go fast!',
+        check: (team) => {
+            const fastCount = team.pokemon.filter(p => {
+                const speedStat = p.stats?.find(s => s.name === 'SPE');
+                return speedStat && speedStat.value > 110;
+            }).length;
+            if (fastCount >= 3) return { matched: true, description: `${fastCount} Pokémon with 110+ Speed` };
+            return { matched: false };
+        }
+    },
+    {
+        id: 'tank-division',
+        name: 'Tank Division',
+        emoji: '🛡️',
+        multiplier: 1.5,
+        tier: 'power-play',
+        flavor: 'Unmovable objects!',
+        check: (team) => {
+            const tankCount = team.pokemon.filter(p => {
+                const defStat = p.stats?.find(s => s.name === 'DEF');
+                return defStat && defStat.value > 100;
+            }).length;
+            if (tankCount >= 3) return { matched: true, description: `${tankCount} Pokémon with 100+ Defense` };
+            return { matched: false };
+        }
     }
 ];
+
+// Identify which Pokemon contributed to a matched multiplier
+function getContributingPokemon(setId, team) {
+    const pokemon = team.pokemon;
+    switch (setId) {
+        case 'baby-brigade':
+            return pokemon.filter(p => pokemonCategories.threeStageFirstEvolutions.includes(p.name.toLowerCase())).map(p => p.name);
+        case 'bottom-barrel':
+            return pokemon.map(p => p.name);
+        case 'bug-catchers':
+            return pokemon.filter(p => p.types?.includes('bug')).map(p => p.name);
+        case 'nfe-army':
+            return pokemon.filter(p => !pokemonCategories.finalEvolutions.includes(p.name.toLowerCase()) && !isLegendary(p.name)).map(p => p.name);
+        case 'sunkern-special':
+            return pokemon.filter(p => p.name.toLowerCase() === 'sunkern').map(p => p.name);
+        case 'slowpoke-parade':
+            return pokemon.filter(p => matchesAnyBase(p.name.toLowerCase(), pokemonCategories.slowpokes)).map(p => p.name);
+        case 'type-specialist':
+        case 'gym-leader': {
+            const typeCounts = {};
+            pokemon.forEach(p => p.types?.forEach(t => { typeCounts[t] = (typeCounts[t] || 0) + 1; }));
+            const bestType = Object.entries(typeCounts).sort(([, a], [, b]) => b - a)[0]?.[0];
+            return bestType ? pokemon.filter(p => p.types?.includes(bestType)).map(p => p.name) : [];
+        }
+        case 'eeveelution-squad':
+            return pokemon.filter(p => pokemonCategories.eeveelutions.includes(p.name.toLowerCase())).map(p => p.name);
+        case 'fossil-expedition':
+            return pokemon.filter(p => pokemonCategories.fossils.includes(p.name.toLowerCase())).map(p => p.name);
+        case 'pretty-in-pink':
+            return pokemon.filter(p => pokemonCategories.pinkPokemon.includes(p.name.toLowerCase())).map(p => p.name);
+        case 'kanto-starters-united':
+            return pokemon.filter(p => pokemonCategories.kantoStarters.includes(p.name.toLowerCase())).map(p => p.name);
+        case 'rocket-roster': {
+            const rocketAll = [...pokemonCategories.teamRocketMeowth, ...pokemonCategories.teamRocketOther];
+            return pokemon.filter(p => rocketAll.includes(p.name.toLowerCase())).map(p => p.name);
+        }
+        case 'legendary-assembly':
+            return pokemon.filter(p => isLegendary(p.name)).map(p => p.name);
+        case 'final-form-force':
+            return pokemon.filter(p => pokemonCategories.finalEvolutions.includes(p.name.toLowerCase())).map(p => p.name);
+        case 'dragons-den':
+            return pokemon.filter(p => pokemonCategories.dragons.includes(p.name.toLowerCase())).map(p => p.name);
+        case 'bird-trio-complete':
+            return pokemon.filter(p => pokemonCategories.legendaryBirds.includes(p.name.toLowerCase())).map(p => p.name);
+        case 'beast-trio-complete':
+            return pokemon.filter(p => ['raikou', 'entei', 'suicune'].includes(p.name.toLowerCase())).map(p => p.name);
+        case 'cocoon-chaos':
+            return pokemon.filter(p => pokemonCategories.cocoons.includes(p.name.toLowerCase())).map(p => p.name);
+        case 'pikaclone-parade':
+            return pokemon.filter(p => matchesAnyBase(p.name.toLowerCase(), pokemonCategories.pikaclones)).map(p => p.name);
+        case 'cat-cafe':
+            return pokemon.filter(p => matchesAnyBase(p.name.toLowerCase(), pokemonCategories.catPokemon)).map(p => p.name);
+        case 'good-boys':
+            return pokemon.filter(p => matchesAnyBase(p.name.toLowerCase(), pokemonCategories.dogPokemon)).map(p => p.name);
+        case 'egg-gang':
+            return pokemon.filter(p => matchesAnyBase(p.name.toLowerCase(), pokemonCategories.eggPokemon)).map(p => p.name);
+        case 'pseudo-legendary-club':
+            return pokemon.filter(p => matchesAnyBase(p.name.toLowerCase(), pokemonCategories.pseudoLegendaries)).map(p => p.name);
+        case 'speed-demons':
+            return pokemon.filter(p => (p.stats?.find(s => s.name === 'SPE')?.value || 0) > 110).map(p => p.name);
+        case 'tank-division':
+            return pokemon.filter(p => (p.stats?.find(s => s.name === 'DEF')?.value || 0) > 100).map(p => p.name);
+        default:
+            return [];
+    }
+}
 
 function detectArcadeMultipliers(teamData, isWinner) {
     const matched = [];
@@ -1270,7 +1502,8 @@ function detectArcadeMultipliers(teamData, isWinner) {
                 multiplier: set.multiplier,
                 tier: set.tier,
                 flavor: set.flavor,
-                description: result.description
+                description: result.description,
+                pokemonNames: getContributingPokemon(set.id, enrichedTeam)
             });
         }
     });
@@ -1280,6 +1513,27 @@ function detectArcadeMultipliers(teamData, isWinner) {
 function calculateCombinedMultiplier(multipliers) {
     if (multipliers.length === 0) return 1;
     return multipliers.reduce((product, m) => product * m.multiplier, 1);
+}
+
+// Calculate adjusted score where each multiplier only boosts the Pokemon that triggered it.
+// A Pokemon in multiple multipliers gets all of them stacked multiplicatively.
+// Ditto copies the highest opponent Pokemon's score.
+function calculatePerPokemonScore(teamData, multipliers, opponentData) {
+    const enrichedTeam = enrichTeamDataForArcade(teamData);
+    let opponentMaxScore = 0;
+    if (opponentData) {
+        const enrichedOpponent = enrichTeamDataForArcade(opponentData);
+        opponentMaxScore = Math.max(...enrichedOpponent.pokemon.map(p => p.score));
+    }
+    return enrichedTeam.pokemon.reduce((total, p) => {
+        let score = p.score;
+        if (p.name.toLowerCase() === 'ditto' && opponentMaxScore > score) {
+            score = opponentMaxScore;
+        }
+        const applicable = multipliers.filter(m => m.pokemonNames?.includes(p.name));
+        const mult = applicable.reduce((prod, m) => prod * m.multiplier, 1);
+        return total + Math.round(score * mult);
+    }, 0);
 }
 
 function enrichTeamDataForArcade(teamData) {
@@ -1431,75 +1685,94 @@ async function showArcadeReveal(
 
         continueBtn.addEventListener('click', cleanup);
 
-        // Build dummy badge pool (all multiplier sets, for random reel items)
-        const dummyPool = arcadeMultiplierSets.map(s => ({
-            name: s.name, emoji: s.emoji, multiplier: s.multiplier
-        }));
-
-        function shuffleArray(arr) {
-            const a = [...arr];
-            for (let i = a.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [a[i], a[j]] = [a[j], a[i]];
-            }
-            return a;
-        }
-
-        function buildBadgeHTML(m, extraClass = '') {
-            return `<div class="arcade-multiplier-badge ${extraClass}">${m.emoji} ${m.name} <span class="multiplier-value">${m.multiplier}x</span></div>`;
-        }
-
-        // Spin a single reel: creates window + strip, animates, resolves when landed
-        function spinReel(container, realBadge, isBet = false) {
-            return new Promise((resolveReel) => {
-                const window = document.createElement('div');
-                window.className = 'arcade-reel-window';
-                const strip = document.createElement('div');
-                strip.className = 'arcade-reel-strip';
-
-                // Pick ~8 random dummies (excluding the real one by id)
-                const dummies = shuffleArray(
-                    dummyPool.filter(d => d.name !== realBadge.name)
-                ).slice(0, 8);
-
-                // Build strip: dummies first, real badge at bottom
-                dummies.forEach(d => {
-                    strip.innerHTML += buildBadgeHTML(d);
-                });
-
-                const betClass = isBet
-                    ? ` bet ${realBadge.won ? 'won' : 'lost'}`
-                    : '';
-                strip.innerHTML += buildBadgeHTML(realBadge, `real-badge${betClass}`);
-
-                window.appendChild(strip);
-                container.appendChild(window);
-
-                // Badge height = 50px, total items = dummies.length + 1
-                const totalItems = dummies.length + 1;
-                const badgeH = 50;
-                // Offset to show last badge centered in window (window is 54px)
-                const targetY = -((totalItems - 1) * badgeH) + 2;
-
-                // Start spinning after a frame
-                requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                        strip.style.transform = `translateY(${targetY}px)`;
-                    });
-                });
-
-                // When transition ends, mark as landed and glow
-                strip.addEventListener('transitionend', () => {
-                    window.classList.add('landed');
-                    const realEl = strip.querySelector('.real-badge');
-                    if (realEl) realEl.classList.add('glow');
-                    resolveReel();
-                }, { once: true });
+        // Build sprite map from DOM cards (name → sprite URL)
+        function buildSpriteMap(teamId) {
+            const grid = document.getElementById(`${teamId}-grid`);
+            if (!grid) return {};
+            const map = {};
+            Array.from(grid.children).forEach(card => {
+                const name = card.querySelector('.pokemon-name')?.textContent || '';
+                const sprite = card.querySelector('.pokemon-sprite')?.src || null;
+                if (name && sprite) map[name] = sprite;
             });
+            return map;
+        }
+        const t1Sprites = buildSpriteMap('team1');
+        const t2Sprites = buildSpriteMap('team2');
+
+        function buildBadgeHTML(m, extraClass = '', tooltip = '') {
+            const titleAttr = tooltip ? ` title="${tooltip.replace(/"/g, '&quot;')}"` : '';
+            return `<div class="arcade-multiplier-badge ${extraClass}"${titleAttr}>${m.emoji} ${m.name} <span class="multiplier-value">${m.multiplier}x</span></div>`;
         }
 
-        // Instant reveal for skip: show all badges without animation
-        function revealAllInstant(multipliers, prefix, betInfo) {
+        function buildTooltip(m) {
+            const parts = [m.flavor || m.description || ''];
+            if (m.pokemonNames?.length) parts.push(m.pokemonNames.join(', '));
+            return parts.filter(Boolean).join('\n');
+        }
+
+        // Reveal a multiplier: show contributing Pokemon sprites one at a time, then pop in the badge
+        async function revealMultiplier(container, multiplier, spriteMap) {
+            const group = document.createElement('div');
+            group.className = 'arcade-reel-group';
+            container.appendChild(group);
+
+            const names = multiplier.pokemonNames || [];
+
+            if (names.length > 0) {
+                const spritesRow = document.createElement('div');
+                spritesRow.className = 'arcade-reel-sprites';
+                group.appendChild(spritesRow);
+
+                for (const name of names) {
+                    if (skipped) return;
+                    const spriteEl = document.createElement('div');
+                    spriteEl.className = 'arcade-reel-sprite';
+                    const url = spriteMap[name] || PLACEHOLDER_SPRITE;
+                    spriteEl.innerHTML = `<img src="${url}" alt="${name}" title="${name}" onerror="this.src='${PLACEHOLDER_SPRITE}';this.onerror=null"><span class="arcade-sprite-name">${name}</span>`;
+                    spritesRow.appendChild(spriteEl);
+
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => spriteEl.classList.add('landed'));
+                    });
+
+                    await new Promise(r => setTimeout(r, 350));
+                }
+            }
+
+            if (skipped) return;
+
+            const badge = document.createElement('div');
+            badge.className = 'arcade-reel-badge';
+            badge.innerHTML = buildBadgeHTML(multiplier, 'real-badge', buildTooltip(multiplier));
+            group.appendChild(badge);
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => badge.classList.add('revealed'));
+            });
+
+            await new Promise(r => setTimeout(r, 500));
+        }
+
+        // Reveal a bet result (no sprites, just badge pop-in)
+        async function revealBet(container, bet, betMult) {
+            const correct = betMult === 1.5;
+            const group = document.createElement('div');
+            group.className = 'arcade-reel-group';
+            container.appendChild(group);
+
+            const badge = document.createElement('div');
+            badge.className = 'arcade-reel-badge';
+            badge.innerHTML = `<div class="arcade-multiplier-badge real-badge bet ${correct ? 'won' : 'lost'}">🎰 Bet: ${bet.categoryName} <span class="multiplier-value">${correct ? '✓ 1.5x' : '✗ 0.75x'}</span></div>`;
+            group.appendChild(badge);
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => badge.classList.add('revealed'));
+            });
+
+            await new Promise(r => setTimeout(r, 500));
+        }
+
+        // Instant reveal for skip: show all sprites and badges without animation
+        function revealAllInstant(multipliers, prefix, betInfo, spriteMap) {
             const container = document.getElementById(`arcade-reveal-${prefix}-reels`);
             container.innerHTML = '';
             if (multipliers.length === 0 && !betInfo) {
@@ -1507,17 +1780,35 @@ async function showArcadeReveal(
                 return;
             }
             multipliers.forEach(m => {
-                const window = document.createElement('div');
-                window.className = 'arcade-reel-window landed';
-                window.innerHTML = `<div class="arcade-reel-strip"><div class="arcade-multiplier-badge real-badge glow">${m.emoji} ${m.name} <span class="multiplier-value">${m.multiplier}x</span></div></div>`;
-                container.appendChild(window);
+                const group = document.createElement('div');
+                group.className = 'arcade-reel-group instant';
+
+                const names = m.pokemonNames || [];
+                if (names.length > 0) {
+                    const spritesRow = document.createElement('div');
+                    spritesRow.className = 'arcade-reel-sprites';
+                    names.forEach(name => {
+                        const url = spriteMap[name] || PLACEHOLDER_SPRITE;
+                        spritesRow.innerHTML += `<div class="arcade-reel-sprite landed"><img src="${url}" alt="${name}" title="${name}" onerror="this.src='${PLACEHOLDER_SPRITE}';this.onerror=null"><span class="arcade-sprite-name">${name}</span></div>`;
+                    });
+                    group.appendChild(spritesRow);
+                }
+
+                const badge = document.createElement('div');
+                badge.className = 'arcade-reel-badge revealed';
+                badge.innerHTML = buildBadgeHTML(m, 'real-badge glow', buildTooltip(m));
+                group.appendChild(badge);
+                container.appendChild(group);
             });
             if (betInfo) {
                 const correct = betInfo.mult === 1.5;
-                const window = document.createElement('div');
-                window.className = 'arcade-reel-window landed';
-                window.innerHTML = `<div class="arcade-reel-strip"><div class="arcade-multiplier-badge real-badge bet ${correct ? 'won' : 'lost'} glow">🎰 Bet: ${betInfo.name} <span class="multiplier-value">${correct ? '✓ 1.5x' : '✗ 0.75x'}</span></div></div>`;
-                container.appendChild(window);
+                const group = document.createElement('div');
+                group.className = 'arcade-reel-group instant';
+                const badge = document.createElement('div');
+                badge.className = 'arcade-reel-badge revealed';
+                badge.innerHTML = `<div class="arcade-multiplier-badge real-badge bet ${correct ? 'won' : 'lost'} glow">🎰 Bet: ${betInfo.name} <span class="multiplier-value">${correct ? '✓ 1.5x' : '✗ 0.75x'}</span></div>`;
+                group.appendChild(badge);
+                container.appendChild(group);
             }
         }
 
@@ -1542,59 +1833,46 @@ async function showArcadeReveal(
             skipped = true;
             const t1Bet = bets.team1 ? { name: bets.team1.categoryName, mult: team1BetMult } : null;
             const t2Bet = bets.team2 ? { name: bets.team2.categoryName, mult: team2BetMult } : null;
-            revealAllInstant(team1Multipliers, 't1', t1Bet);
-            revealAllInstant(team2Multipliers, 't2', t2Bet);
+            revealAllInstant(team1Multipliers, 't1', t1Bet, t1Sprites);
+            revealAllInstant(team2Multipliers, 't2', t2Bet, t2Sprites);
             showFinalScoresAndWinner();
             showContinue();
         });
 
-        // Animated reveal sequence with slot machine reels
+        // Animated reveal sequence with sprites
         async function animateReveal() {
-            // Spin team 1 multipliers
             const t1Container = document.getElementById('arcade-reveal-t1-reels');
             for (const m of team1Multipliers) {
                 if (skipped) return;
-                await spinReel(t1Container, m);
+                await revealMultiplier(t1Container, m, t1Sprites);
                 if (skipped) return;
                 await new Promise(r => setTimeout(r, 300));
             }
 
-            // Spin team 2 multipliers
             const t2Container = document.getElementById('arcade-reveal-t2-reels');
             for (const m of team2Multipliers) {
                 if (skipped) return;
-                await spinReel(t2Container, m);
+                await revealMultiplier(t2Container, m, t2Sprites);
                 if (skipped) return;
                 await new Promise(r => setTimeout(r, 300));
             }
 
             if (skipped) return;
 
-            // Spin bet results as reels too
+            // Bet results (no sprites, just badge pop-in)
             if (bets.team1) {
-                const correct = team1BetMult === 1.5;
-                await spinReel(t1Container, {
-                    emoji: '🎰', name: `Bet: ${bets.team1.categoryName}`,
-                    multiplier: correct ? '✓ 1.5' : '✗ 0.75',
-                    won: correct
-                }, true);
+                await revealBet(t1Container, bets.team1, team1BetMult);
                 if (skipped) return;
                 await new Promise(r => setTimeout(r, 300));
             }
             if (bets.team2) {
-                const correct = team2BetMult === 1.5;
-                await spinReel(t2Container, {
-                    emoji: '🎰', name: `Bet: ${bets.team2.categoryName}`,
-                    multiplier: correct ? '✓ 1.5' : '✗ 0.75',
-                    won: correct
-                }, true);
+                await revealBet(t2Container, bets.team2, team2BetMult);
                 if (skipped) return;
                 await new Promise(r => setTimeout(r, 300));
             }
 
             if (skipped) return;
 
-            // Show final scores and winner
             showFinalScoresAndWinner();
             showContinue();
         }
@@ -1602,50 +1880,52 @@ async function showArcadeReveal(
         const hasAny = team1Multipliers.length > 0 || team2Multipliers.length > 0 || bets.team1 || bets.team2;
 
         if (!hasAny) {
-            // No bonuses: brief reel spin landing on "No Bonuses"
+            // No bonuses: show message with brief delay
             const t1Container = document.getElementById('arcade-reveal-t1-reels');
             const t2Container = document.getElementById('arcade-reveal-t2-reels');
+            t1Container.innerHTML = '<div class="arcade-no-bonus">No bonuses</div>';
+            t2Container.innerHTML = '<div class="arcade-no-bonus">No bonuses</div>';
 
-            // Build a small reel that lands on "No Bonuses"
-            function spinNoBonus(container) {
-                return new Promise((res) => {
-                    const window = document.createElement('div');
-                    window.className = 'arcade-reel-window';
-                    const strip = document.createElement('div');
-                    strip.className = 'arcade-reel-strip';
-
-                    // 4 random dummies + "No Bonuses" at end
-                    const dummies = shuffleArray(dummyPool).slice(0, 4);
-                    dummies.forEach(d => {
-                        strip.innerHTML += buildBadgeHTML(d);
-                    });
-                    strip.innerHTML += '<div class="arcade-multiplier-badge real-badge" style="color:#666;font-style:italic">No Bonuses</div>';
-
-                    window.appendChild(strip);
-                    container.appendChild(window);
-
-                    const targetY = -(4 * 50) + 2;
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            strip.style.transform = `translateY(${targetY}px)`;
-                        });
-                    });
-
-                    strip.addEventListener('transitionend', () => {
-                        window.classList.add('landed');
-                        res();
-                    }, { once: true });
-                });
-            }
-
-            await Promise.all([spinNoBonus(t1Container), spinNoBonus(t2Container)]);
-            await new Promise(r => setTimeout(r, 400));
+            await new Promise(r => setTimeout(r, 800));
             showFinalScoresAndWinner();
             showContinue();
         } else {
             animateReveal();
         }
     });
+}
+
+// Show arcade bonus indicators below a team's grid after reveal
+function showArcadeBonusIndicators(teamId, multipliers, dittoTransform) {
+    // Remove any existing indicator for this team
+    document.getElementById(`${teamId}-arcade-bonuses`)?.remove();
+
+    if ((!multipliers || multipliers.length === 0) && !dittoTransform) return;
+
+    const grid = document.getElementById(`${teamId}-grid`);
+    if (!grid) return;
+
+    const summary = document.createElement('div');
+    summary.id = `${teamId}-arcade-bonuses`;
+    summary.className = 'arcade-bonus-summary';
+
+    if (dittoTransform) {
+        const tag = document.createElement('span');
+        tag.className = 'arcade-bonus-tag ditto';
+        tag.title = `Ditto transformed! Copied ${dittoTransform.copiedName}'s score (${dittoTransform.from} → ${dittoTransform.to})`;
+        tag.textContent = `🫠 Ditto → ${dittoTransform.copiedName} (${dittoTransform.to})`;
+        summary.appendChild(tag);
+    }
+
+    (multipliers || []).forEach(m => {
+        const tip = [m.flavor || '', m.pokemonNames?.length ? m.pokemonNames.join(', ') : ''].filter(Boolean).join('\n');
+        const tag = document.createElement('span');
+        tag.className = 'arcade-bonus-tag';
+        tag.title = tip;
+        tag.textContent = `${m.emoji} ${m.name} ${m.multiplier}x`;
+        summary.appendChild(tag);
+    });
+    grid.after(summary);
 }
 
 // Detect achievements for a team
@@ -2562,15 +2842,13 @@ async function determineWinner() {
         const team1MultipliersBase = detectArcadeMultipliers(team1Data, false);
         const team2MultipliersBase = detectArcadeMultipliers(team2Data, false);
 
-        const team1Combined = calculateCombinedMultiplier(team1MultipliersBase);
-        const team2Combined = calculateCombinedMultiplier(team2MultipliersBase);
-
         // Apply bets
         const team1BetMultiplier = evaluateBet('team1', team1MultipliersBase);
         const team2BetMultiplier = evaluateBet('team2', team2MultipliersBase);
 
-        const team1Adjusted = Math.round(team1Score * team1Combined * team1BetMultiplier);
-        const team2Adjusted = Math.round(team2Score * team2Combined * team2BetMultiplier);
+        // Per-Pokemon scoring: each multiplier only boosts the Pokemon that triggered it
+        const team1Adjusted = Math.round(calculatePerPokemonScore(team1Data, team1MultipliersBase, team2Data) * team1BetMultiplier);
+        const team2Adjusted = Math.round(calculatePerPokemonScore(team2Data, team2MultipliersBase, team1Data) * team2BetMultiplier);
 
         // Determine preliminary winner from adjusted scores
         let prelimWinner = null;
@@ -2583,29 +2861,41 @@ async function determineWinner() {
         const team1MultipliersFinal = detectArcadeMultipliers(team1Data, team1IsWinner);
         const team2MultipliersFinal = detectArcadeMultipliers(team2Data, team2IsWinner);
 
-        const team1CombinedFinal = calculateCombinedMultiplier(team1MultipliersFinal);
-        const team2CombinedFinal = calculateCombinedMultiplier(team2MultipliersFinal);
+        const team1AdjustedFinal = Math.round(calculatePerPokemonScore(team1Data, team1MultipliersFinal, team2Data) * team1BetMultiplier);
+        const team2AdjustedFinal = Math.round(calculatePerPokemonScore(team2Data, team2MultipliersFinal, team1Data) * team2BetMultiplier);
 
-        const team1AdjustedFinal = Math.round(team1Score * team1CombinedFinal * team1BetMultiplier);
-        const team2AdjustedFinal = Math.round(team2Score * team2CombinedFinal * team2BetMultiplier);
+        // Detect Ditto transforms for display
+        function getDittoTransform(teamData, opponentData) {
+            const team = enrichTeamDataForArcade(teamData);
+            const opponent = enrichTeamDataForArcade(opponentData);
+            const ditto = team.pokemon.find(p => p.name.toLowerCase() === 'ditto');
+            if (!ditto) return null;
+            const best = opponent.pokemon.reduce((max, p) => p.score > max.score ? p : max, opponent.pokemon[0]);
+            if (best && best.score > ditto.score) {
+                return { from: ditto.score, to: best.score, copiedName: best.name };
+            }
+            return null;
+        }
+        const team1Ditto = getDittoTransform(team1Data, team2Data);
+        const team2Ditto = getDittoTransform(team2Data, team1Data);
 
         // Store arcade data for saving later
         window._arcadeBattleData = {
             team1: {
                 rawScore: team1Score,
                 multipliers: team1MultipliersFinal,
-                combinedMultiplier: team1CombinedFinal,
                 betMultiplier: team1BetMultiplier,
                 adjustedScore: team1AdjustedFinal,
-                bet: currentBets.team1
+                bet: currentBets.team1,
+                dittoTransform: team1Ditto
             },
             team2: {
                 rawScore: team2Score,
                 multipliers: team2MultipliersFinal,
-                combinedMultiplier: team2CombinedFinal,
                 betMultiplier: team2BetMultiplier,
                 adjustedScore: team2AdjustedFinal,
-                bet: currentBets.team2
+                bet: currentBets.team2,
+                dittoTransform: team2Ditto
             }
         };
 
@@ -2638,6 +2928,10 @@ async function determineWinner() {
         // Reset bets for next battle
         currentBets = { team1: null, team2: null };
 
+        // Show bonus indicators on the main grid
+        showArcadeBonusIndicators('team1', team1MultipliersFinal, team1Ditto);
+        showArcadeBonusIndicators('team2', team2MultipliersFinal, team2Ditto);
+
     } else {
         // Classic mode: unchanged behavior
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -2658,24 +2952,26 @@ async function determineWinner() {
         window._arcadeBattleData = null;
     }
 
-    // Detect and display achievements (same for both modes)
-    const isTie = !team1.classList.contains('winner') && !team2.classList.contains('winner') && team1.classList.contains('tie');
-    const team1IsWinner = team1.classList.contains('winner');
-    const team2IsWinner = team2.classList.contains('winner');
-    currentBattleAchievements.team1 = detectAchievements(team1Data, team1IsWinner, isTie);
-    currentBattleAchievements.team2 = detectAchievements(team2Data, team2IsWinner, isTie);
+    // Detect and display achievements (skip in arcade mode — arcade has its own multiplier system)
+    if (!arcadeMode) {
+        const isTie = !team1.classList.contains('winner') && !team2.classList.contains('winner') && team1.classList.contains('tie');
+        const team1IsWinner = team1.classList.contains('winner');
+        const team2IsWinner = team2.classList.contains('winner');
+        currentBattleAchievements.team1 = detectAchievements(team1Data, team1IsWinner, isTie);
+        currentBattleAchievements.team2 = detectAchievements(team2Data, team2IsWinner, isTie);
 
-    const crossTeamAchievements = detectCrossTeamAchievements(team1Data, team2Data);
-    const allAchievements = [
-        ...currentBattleAchievements.team1,
-        ...currentBattleAchievements.team2,
-        ...crossTeamAchievements
-    ];
+        const crossTeamAchievements = detectCrossTeamAchievements(team1Data, team2Data);
+        const allAchievements = [
+            ...currentBattleAchievements.team1,
+            ...currentBattleAchievements.team2,
+            ...crossTeamAchievements
+        ];
 
-    const uniqueAchievements = filterTieredAchievements(
-        deduplicateAchievements(allAchievements)
-    );
-    showAchievementPopup(uniqueAchievements);
+        const uniqueAchievements = filterTieredAchievements(
+            deduplicateAchievements(allAchievements)
+        );
+        showAchievementPopup(uniqueAchievements);
+    }
 
     // Show the save button
     const saveBtn = getSaveButton();
@@ -2881,12 +3177,12 @@ function renderHistoryEntry(result) {
                 <div class="history-arcade-team">
                     <span class="arcade-detail-label">${result.team1.name}:</span>
                     ${formatMultipliers(t1)}
-                    ${t1?.combinedMultiplier > 1 ? `<span class="arcade-total-mult">${t1.combinedMultiplier}x = ${t1.adjustedScore}</span>` : ''}
+                    ${t1?.adjustedScore && t1.adjustedScore !== t1.rawScore ? `<span class="arcade-total-mult">= ${t1.adjustedScore}</span>` : ''}
                 </div>
                 <div class="history-arcade-team">
                     <span class="arcade-detail-label">${result.team2.name}:</span>
                     ${formatMultipliers(t2)}
-                    ${t2?.combinedMultiplier > 1 ? `<span class="arcade-total-mult">${t2.combinedMultiplier}x = ${t2.adjustedScore}</span>` : ''}
+                    ${t2?.adjustedScore && t2.adjustedScore !== t2.rawScore ? `<span class="arcade-total-mult">= ${t2.adjustedScore}</span>` : ''}
                 </div>
                 ${streakHTML}
             </div>
